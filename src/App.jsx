@@ -19,6 +19,8 @@ function App() {
   const [brandingLink, setBrandingLink] = useState('');
   const [brandingX, setBrandingX] = useState(350);
   const [brandingY, setBrandingY] = useState(1050);
+  const [brandingSize, setBrandingSize] = useState(16);
+  const [isBrandingFree, setIsBrandingFree] = useState(false);
   const [originalPdfBytes, setOriginalPdfBytes] = useState(null);
 
   // Drag and Pan State
@@ -289,13 +291,24 @@ function App() {
           if (brandingName) {
              const safeBrandingName = sanitizePdfText(brandingName);
              if (safeBrandingName) {
-               const textSize = 11 * scaleX;
+               const pageData = pages[i] || {};
+               const pBrandingX = pageData.brandingX !== undefined ? pageData.brandingX : brandingX;
+               const pBrandingY = pageData.brandingY !== undefined ? pageData.brandingY : brandingY;
+               const pBrandingSize = pageData.brandingSize !== undefined ? pageData.brandingSize : brandingSize;
+               
+               const textSize = (isBrandingFree ? pBrandingSize : 11) * scaleX;
                const textWidth = boldFont.widthOfTextAtSize(safeBrandingName, textSize);
                const textHeight = boldFont.heightAtSize(textSize);
                
-               // Always centered at the bottom
-               const pdfX = (width - textWidth) / 2;
-               const pdfY = 30 * scaleY; // 30px from bottom (pdf-lib Y is from bottom up)
+               let pdfX, pdfY;
+               if (isBrandingFree) {
+                 pdfX = pBrandingX * scaleX;
+                 pdfY = height - (pBrandingY * scaleY) - (textSize * scaleY);
+               } else {
+                 // Always centered at the bottom
+                 pdfX = (width - textWidth) / 2;
+                 pdfY = 30 * scaleY; // 30px from bottom (pdf-lib Y is from bottom up)
+               }
                
                // Draw solid white background for visibility
                pdfPage.drawRectangle({
@@ -429,6 +442,18 @@ function App() {
     e.target.value = null;
   };
 
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        handleUpdateDraft('image', reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+    e.target.value = null;
+  };
+
   // Drag Handlers
   const handleElementMouseDown = (e, pageId, elementType, elementId = null) => {
     e.stopPropagation();
@@ -437,11 +462,22 @@ function App() {
     
     if (elementType === 'branding') {
       setDraggingElement({
+        pageId,
         elementType: 'branding',
         startX: e.clientX,
         startY: e.clientY,
-        initialX: brandingX,
-        initialY: brandingY
+        initialX: page?.brandingX ?? brandingX,
+        initialY: page?.brandingY ?? brandingY
+      });
+      return;
+    }
+
+    if (elementType === 'branding-resize') {
+      setDraggingElement({
+        pageId,
+        elementType: 'branding-resize',
+        startX: e.clientX,
+        initialSize: page?.brandingSize ?? brandingSize
       });
       return;
     }
@@ -517,11 +553,42 @@ function App() {
       const dy = (e.clientY - draggingElement.startY) / (zoom / 100);
       
       if (draggingElement.elementType === 'branding') {
-        setBrandingX(draggingElement.initialX + dx);
-        setBrandingY(draggingElement.initialY + dy);
+        const newX = draggingElement.initialX + dx;
+        const newY = draggingElement.initialY + dy;
+        if (draggingElement.pageId) {
+          if (editingPageId === draggingElement.pageId || (!editingPageId && pages.length === 0)) {
+            handleUpdateDraft('brandingX', newX);
+            handleUpdateDraft('brandingY', newY);
+          } else {
+            setPages(prev => prev.map(p => p.id === draggingElement.pageId ? { ...p, brandingX: newX, brandingY: newY } : p));
+            if (editingPageId === draggingElement.pageId) {
+              setDraftPage(prev => ({ ...prev, brandingX: newX, brandingY: newY }));
+            }
+          }
+        } else {
+          setBrandingX(newX);
+          setBrandingY(newY);
+        }
         return;
       }
       
+      if (draggingElement.elementType === 'branding-resize') {
+        const newSize = Math.max(10, Math.min(200, draggingElement.initialSize + dx / 2));
+        if (draggingElement.pageId) {
+          if (editingPageId === draggingElement.pageId || (!editingPageId && pages.length === 0)) {
+            handleUpdateDraft('brandingSize', newSize);
+          } else {
+            setPages(prev => prev.map(p => p.id === draggingElement.pageId ? { ...p, brandingSize: newSize } : p));
+            if (editingPageId === draggingElement.pageId) {
+              setDraftPage(prev => ({ ...prev, brandingSize: newSize }));
+            }
+          }
+        } else {
+          setBrandingSize(newSize);
+        }
+        return;
+      }
+
       if (draggingElement.elementType.endsWith('-resize')) {
         const isImage = draggingElement.elementType === 'image-resize';
         const newSize = isImage 
@@ -1034,15 +1101,16 @@ function App() {
             className="floating-element-container"
             style={{
               position: 'absolute',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              bottom: '30px',
+              left: isBrandingFree ? (page.brandingX ?? brandingX) : '50%',
+              top: isBrandingFree ? (page.brandingY ?? brandingY) : 'auto',
+              bottom: isBrandingFree ? 'auto' : '30px',
+              transform: isBrandingFree ? 'none' : 'translateX(-50%)',
               zIndex: 20
             }}
           >
             <div
               style={{
-                fontSize: '1rem',
+                fontSize: isBrandingFree ? `${page.brandingSize ?? brandingSize}px` : '1rem',
                 fontWeight: 800,
                 color: '#2563eb',
                 fontFamily: 'inherit',
@@ -1052,8 +1120,15 @@ function App() {
                 boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
                 pointerEvents: 'auto',
                 background: '#ffffff',
-                borderRadius: '6px'
+                borderRadius: '6px',
+                cursor: isBrandingFree ? 'grab' : 'default',
               }}
+              onMouseDown={(e) => {
+                if (isBrandingFree) {
+                  handleElementMouseDown(e, page.id || draftPage.id, 'branding');
+                }
+              }}
+              onDragStart={(e) => e.preventDefault()}
             >
               {brandingLink ? (
                 <a 
@@ -1063,6 +1138,7 @@ function App() {
                   rel="noopener noreferrer" 
                   style={{ color: '#2563eb', textDecoration: 'underline', cursor: 'pointer', fontWeight: 800 }}
                   onDragStart={(e) => e.preventDefault()}
+                  onClick={(e) => { if(isBrandingFree && isDragging) e.preventDefault(); }}
                 >
                   {brandingName}
                 </a>
@@ -1070,6 +1146,12 @@ function App() {
                 <span style={{ fontWeight: 800, color: '#1f2937' }}>{brandingName}</span>
               )}
             </div>
+            {!isExporting && isBrandingFree && (
+              <div 
+                className="resize-handle"
+                onMouseDown={(e) => handleElementMouseDown(e, page.id || draftPage.id, 'branding-resize')}
+              />
+            )}
           </div>
         )}
       </div>
@@ -1188,6 +1270,12 @@ function App() {
             <label><Type /> Footer Branding Link (Global)</label>
             <input type="text" className="form-control" value={brandingLink} onChange={e => setBrandingLink(e.target.value)} placeholder="e.g. https://example.com" />
           </div>
+          <div className="form-group">
+            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '8px' }}>
+              <input type="checkbox" checked={isBrandingFree} onChange={e => setIsBrandingFree(e.target.checked)} />
+              Enable Free Positioning & Resizing
+            </label>
+          </div>
 
           <hr style={{ borderTop: '1px solid var(--border)', borderBottom: 'none' }} />
 
@@ -1286,11 +1374,17 @@ function App() {
                     <div className="form-group">
                       <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span><Type /> Image URL</span>
-                        <a href="https://www.google.com/imghp" target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.75rem', color: 'var(--primary)', textDecoration: 'none' }}>
-                          🔍 Find on Google
-                        </a>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <label style={{ fontSize: '0.75rem', color: 'var(--primary)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                            <Upload size={12} style={{ marginRight: '4px' }} /> Upload
+                            <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageUpload} />
+                          </label>
+                          <a href="https://www.google.com/imghp" target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.75rem', color: 'var(--primary)', textDecoration: 'none' }}>
+                            🔍 Find
+                          </a>
+                        </div>
                       </label>
-                      <input type="text" className="form-control" value={draftPage.image || ''} onChange={e => handleUpdateDraft('image', e.target.value)} placeholder="Paste image address here..." />
+                      <input type="text" className="form-control" value={draftPage.image || ''} onChange={e => handleUpdateDraft('image', e.target.value)} placeholder="Paste image address or click Upload..." />
                     </div>
                     <div className="form-group">
                       <label><Type /> Heading</label>
@@ -1332,13 +1426,19 @@ function App() {
           <div className="form-group">
             <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span><Image size={16} /> Floating Image URL</span>
-              <a href="https://www.google.com/imghp" target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.75rem', color: 'var(--primary)', textDecoration: 'none' }}>
-                🔍 Find on Google
-              </a>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <label style={{ fontSize: '0.75rem', color: 'var(--primary)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                  <Upload size={12} style={{ marginRight: '4px' }} /> Upload
+                  <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageUpload} />
+                </label>
+                <a href="https://www.google.com/imghp" target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.75rem', color: 'var(--primary)', textDecoration: 'none' }}>
+                  🔍 Find
+                </a>
+              </div>
             </label>
-            <input type="text" className="form-control" value={draftPage.image || ''} onChange={e => handleUpdateDraft('image', e.target.value)} placeholder="Paste image address here to freely drag it anywhere..." />
+            <input type="text" className="form-control" value={draftPage.image || ''} onChange={e => handleUpdateDraft('image', e.target.value)} placeholder="Paste image address or click Upload..." />
             <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-              Tip: In Google Images, right-click any image and select <b>"Copy image address"</b> to paste here.
+              Tip: Upload a local image or copy an image address from Google Images.
             </div>
           </div>
           <div className="form-group">
