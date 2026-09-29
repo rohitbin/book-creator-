@@ -1284,8 +1284,13 @@ function App() {
                 return (
                   <>
                     <div className="form-group">
-                      <label><Type /> Image URL</label>
-                      <input type="text" className="form-control" value={draftPage.image || ''} onChange={e => handleUpdateDraft('image', e.target.value)} placeholder="https://example.com/image.jpg" />
+                      <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span><Type /> Image URL</span>
+                        <a href="https://www.google.com/imghp" target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.75rem', color: 'var(--primary)', textDecoration: 'none' }}>
+                          🔍 Find on Google
+                        </a>
+                      </label>
+                      <input type="text" className="form-control" value={draftPage.image || ''} onChange={e => handleUpdateDraft('image', e.target.value)} placeholder="Paste image address here..." />
                     </div>
                     <div className="form-group">
                       <label><Type /> Heading</label>
@@ -1325,8 +1330,16 @@ function App() {
           {/* Universal Floating Elements */}
           <hr style={{ borderTop: '1px solid var(--border)', borderBottom: 'none' }} />
           <div className="form-group">
-            <label><Image size={16} /> Floating Image URL</label>
-            <input type="text" className="form-control" value={draftPage.image || ''} onChange={e => handleUpdateDraft('image', e.target.value)} placeholder="Paste image URL here to freely drag it anywhere on the page..." />
+            <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span><Image size={16} /> Floating Image URL</span>
+              <a href="https://www.google.com/imghp" target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.75rem', color: 'var(--primary)', textDecoration: 'none' }}>
+                🔍 Find on Google
+              </a>
+            </label>
+            <input type="text" className="form-control" value={draftPage.image || ''} onChange={e => handleUpdateDraft('image', e.target.value)} placeholder="Paste image address here to freely drag it anywhere..." />
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+              Tip: In Google Images, right-click any image and select <b>"Copy image address"</b> to paste here.
+            </div>
           </div>
           <div className="form-group">
             <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
