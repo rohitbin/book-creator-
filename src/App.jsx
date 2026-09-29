@@ -367,49 +367,9 @@ function App() {
         link.click();
         
       } else {
-        // Raster export for standard generated pages
-        const pdf = new jsPDF({
-          orientation: 'portrait',
-          unit: 'px',
-          format: pageSize === 'a5' ? 'a5' : (pageSize === 'letter' ? 'letter' : 'a4')
-        });
-
-        for (let i = 0; i < elements.length; i++) {
-          const el = elements[i];
-          const canvas = await html2canvas(el, {
-            scale: 1, // Reduced to 1 to massively speed up export for large books
-            useCORS: true,
-            logging: false
-          });
-          
-          // Reduced from 1.0 to 0.8 to heavily reduce string length of the final PDF
-          const imgData = canvas.toDataURL('image/jpeg', 0.8);
-          const pdfWidth = pdf.internal.pageSize.getWidth();
-          const pdfHeight = pdf.internal.pageSize.getHeight();
-          
-          if (i > 0) {
-            pdf.addPage();
-          }
-          
-          pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
-
-          // Map the HTML link into the PDF coordinates so it's clickable in the exported file!
-          const brandingLinkElement = el.querySelector('.branding-link');
-          if (brandingLinkElement) {
-            const pageRect = el.getBoundingClientRect();
-            const linkRect = brandingLinkElement.getBoundingClientRect();
-            const scaleX = pdfWidth / pageRect.width;
-            const scaleY = pdfHeight / pageRect.height;
-            const x = (linkRect.left - pageRect.left) * scaleX;
-            const y = (linkRect.top - pageRect.top) * scaleY;
-            const w = linkRect.width * scaleX;
-            const h = linkRect.height * scaleY;
-            
-            pdf.link(x, y, w, h, { url: brandingLinkElement.href });
-          }
-        }
-        
-        pdf.save('Document.pdf');
+        // Native vector export using the browser's print-to-pdf engine
+        alert("To save as a high-quality, text-selectable PDF:\n\n1. Wait for the Print dialog to open.\n2. Change the Destination to 'Save as PDF'.\n3. Ensure 'Background graphics' is turned ON.\n4. Click Save.");
+        window.print();
       }
     } catch (error) {
       console.error("Failed to generate PDF:", error);
