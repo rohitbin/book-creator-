@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
-import { Download, Type, User, AlignLeft, LayoutTemplate, Sparkles, BookOpen, Layers, FileText, Plus, Trash2, ZoomIn, ZoomOut, Maximize, Image } from 'lucide-react';
+import { Download, Type, User, AlignLeft, LayoutTemplate, Sparkles, BookOpen, Layers, FileText, Plus, Trash2, ZoomIn, ZoomOut, Maximize, Image, Upload } from 'lucide-react';
+import * as pdfjsLib from 'pdfjs-dist';
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+import { PDFDocument, rgb, PDFName, PDFString, StandardFonts } from 'pdf-lib';
 import './App.css';
 
 function App() {
@@ -14,6 +17,9 @@ function App() {
   const [isGlobalLayout, setIsGlobalLayout] = useState(false);
   const [brandingName, setBrandingName] = useState('');
   const [brandingLink, setBrandingLink] = useState('');
+  const [brandingX, setBrandingX] = useState(350);
+  const [brandingY, setBrandingY] = useState(1050);
+  const [originalPdfBytes, setOriginalPdfBytes] = useState(null);
 
   // Drag and Pan State
   const previewRef = React.useRef(null);
@@ -26,17 +32,19 @@ function App() {
   const handleZoomOut = () => setZoom(prev => Math.max(prev - 10, 20));
   const handleZoomReset = () => setZoom(70);
 
-  // Maintain array of all added pages
-  const [pages, setPages] = useState([]);
-  
-  const [draftPage, setDraftPage] = useState({
+  const initialDraftPage = {
     type: 'cover',
     title: 'The Enchanted Forest',
     subtitle: 'A Tale of Magic and Mystery',
     author: 'Jane Austen',
     content: 'The cold winds howled through the ancient trees, their branches twisting like skeletal fingers against the twilight sky. Elara pulled her cloak tighter, her heart pounding a steady rhythm against her ribs.\n\nShe had been warned about the Whispering Woods, but the map in her trembling hands left no room for doubt. The artifact lay hidden somewhere in its depths.',
     image: ''
-  });
+  };
+
+  // Maintain array of all added pages
+  const [pages, setPages] = useState([{ ...initialDraftPage, id: Date.now() }]);
+  
+  const [draftPage, setDraftPage] = useState(initialDraftPage);
 
   const PAGE_TYPES = [
     { id: 'cover', label: 'Title / Cover Page' },
@@ -51,6 +59,7 @@ function App() {
     { id: 'mcq', label: 'MCQ Page' },
     { id: 'notes', label: 'Notes Page' },
     { id: 'imagetext', label: 'Image + Text Page' },
+    { id: 'pdfpage', label: 'Imported PDF Page' },
     { id: 'backcover', label: 'Back Cover' },
   ];
 
@@ -68,32 +77,61 @@ function App() {
     }
   };
 
-  const chunkText = (text, maxChars, type) => {
+  const chunkText = (text, maxChars, maxLines, type) => {
     const chunks = [];
     let textToProcess = text;
     while (textToProcess.length > 0) {
-      if (textToProcess.length <= maxChars) {
+      const lines = textToProcess.split('\n');
+      let estimatedLength = textToProcess.length;
+      
+      if (estimatedLength <= maxChars && lines.length <= maxLines) {
         chunks.push(textToProcess);
         break;
       }
+      
       let breakPoint = -1;
+      
       if (['exam', 'question', 'mcq'].includes(type)) {
         const regex = /\n\s*\d+[\.\)]/g;
         let match;
+        let qCount = 1;
         while ((match = regex.exec(textToProcess)) !== null) {
-          if (match.index > 0 && match.index <= maxChars) {
+          qCount++;
+          const MAX_Q = type === 'exam' ? 6 : 4;
+          
+          if (qCount > MAX_Q) {
+            breakPoint = match.index;
+            break;
+          }
+          
+          const subText = textToProcess.substring(0, match.index);
+          const rawLines = subText.split('\n').length;
+          const subLines = rawLines + (qCount * 8);
+          
+          if (match.index > 0 && match.index <= maxChars && subLines <= maxLines) {
             breakPoint = match.index;
           }
-          if (match.index > maxChars) break;
+          if (match.index > maxChars || subLines > maxLines) break;
         }
       }
-      if (breakPoint === -1 || breakPoint < maxChars * 0.2) breakPoint = textToProcess.lastIndexOf('\n\n', maxChars);
-      if (breakPoint === -1 || breakPoint < maxChars * 0.2) breakPoint = textToProcess.lastIndexOf('\n', maxChars);
-      if (breakPoint === -1 || breakPoint < maxChars * 0.2) breakPoint = textToProcess.lastIndexOf(' ', maxChars);
-      if (breakPoint === -1) breakPoint = maxChars;
       
+      if (breakPoint === -1) {
+        let currentPos = 0;
+        let currentLines = 0;
+        for (let i = 0; i < lines.length; i++) {
+          if (currentLines + 1 > maxLines || currentPos + lines[i].length + 1 > maxChars) {
+            breakPoint = currentPos > 0 ? currentPos : (textToProcess.lastIndexOf('\n', maxChars) || maxChars);
+            break;
+          }
+          currentPos += lines[i].length + 1;
+          currentLines += 1 + Math.floor(lines[i].length / 80);
+        }
+      }
+      
+      if (breakPoint <= 0) breakPoint = maxChars;
+
       chunks.push(textToProcess.substring(0, breakPoint).trim());
-      textToProcess = textToProcess.substring(breakPoint).trim();
+      textToProcess = textToProcess.substring(breakPoint).trimLeft();
     }
     return chunks;
   };
@@ -104,23 +142,35 @@ function App() {
 
     const timer = setTimeout(() => {
       const charsPerPageMap = { micro: 6000, tiny: 4500, small: 3300, medium: 2200, large: 1350 };
+      const linesPerPageMap = { micro: 65, tiny: 55, small: 44, medium: 32, large: 22 };
+      
       const sizeMultiplierMap = { a4: 1.0, a5: 0.5, letter: 0.95 };
-      let MAX_CHARS_PER_PAGE = charsPerPageMap[fontSize] * sizeMultiplierMap[pageSize]; 
+      let MAX_CHARS = charsPerPageMap[fontSize] * sizeMultiplierMap[pageSize]; 
+      let MAX_LINES = linesPerPageMap[fontSize] * sizeMultiplierMap[pageSize];
       
       if (draftPage.type === 'exam') {
-        MAX_CHARS_PER_PAGE *= 0.28; // Heavily padded two-column blocks, unbreakable
+        MAX_CHARS *= 0.28;
+        MAX_LINES *= 2; // Two columns can hold twice the lines
       } else if (draftPage.type === 'twocolumn') {
-        MAX_CHARS_PER_PAGE *= 0.55;
+        MAX_CHARS *= 0.55;
+        MAX_LINES *= 2;
       } else if (['question', 'mcq'].includes(draftPage.type)) {
-        MAX_CHARS_PER_PAGE *= 0.45; // Padded single-column blocks
+        MAX_CHARS *= 0.45;
+        // Lines remain the same for single column, but chars are heavily restricted
       }
       
       const paginatableTypes = ['content', 'twocolumn', 'exam', 'question', 'mcq', 'preface', 'imagetext', 'notes'];
 
-      if (paginatableTypes.includes(draftPage.type) && draftPage.content && draftPage.content.length > MAX_CHARS_PER_PAGE) {
-         const chunks = chunkText(draftPage.content, MAX_CHARS_PER_PAGE, draftPage.type);
+      if (paginatableTypes.includes(draftPage.type) && draftPage.content) {
+         const rawCurrentLines = draftPage.content.split('\n').length;
+         const currentQuestionCount = (draftPage.content.match(/\n\s*\d+[\.\)]/g) || []).length + 1;
+         const MAX_Q = draftPage.type === 'exam' ? 6 : (['question', 'mcq'].includes(draftPage.type) ? 4 : 999);
+         const currentLines = rawCurrentLines + (currentQuestionCount * 8);
          
-         if (chunks.length > 1) {
+         if (draftPage.content.length > MAX_CHARS || currentLines > MAX_LINES || currentQuestionCount > MAX_Q) {
+           const chunks = chunkText(draftPage.content, MAX_CHARS, MAX_LINES, draftPage.type);
+           
+           if (chunks.length > 1) {
            const newPagesToAdd = chunks.map((chunk, index) => ({
              ...draftPage,
              id: index === 0 ? editingPageId : (Date.now() + index),
@@ -139,6 +189,7 @@ function App() {
 
            // Keep them editing chunk 1, effectively slicing the text in the textarea
            setDraftPage(prev => ({ ...prev, content: chunks[0] }));
+           }
          }
       }
     }, 1000);
@@ -148,17 +199,26 @@ function App() {
 
   const handleAddPage = () => {
     const charsPerPageMap = { micro: 6000, tiny: 4500, small: 3300, medium: 2200, large: 1350 };
+    const linesPerPageMap = { micro: 65, tiny: 55, small: 44, medium: 32, large: 22 };
+    
     const sizeMultiplierMap = { a4: 1.0, a5: 0.5, letter: 0.95 };
-    let MAX_CHARS_PER_PAGE = charsPerPageMap[fontSize] * sizeMultiplierMap[pageSize]; 
-    if (draftPage.type === 'exam') MAX_CHARS_PER_PAGE *= 0.28;
-    else if (draftPage.type === 'twocolumn') MAX_CHARS_PER_PAGE *= 0.55;
-    else if (['question', 'mcq'].includes(draftPage.type)) MAX_CHARS_PER_PAGE *= 0.45;
+    let MAX_CHARS = charsPerPageMap[fontSize] * sizeMultiplierMap[pageSize]; 
+    let MAX_LINES = linesPerPageMap[fontSize] * sizeMultiplierMap[pageSize];
+    
+    if (draftPage.type === 'exam') { MAX_CHARS *= 0.28; MAX_LINES *= 2; }
+    else if (draftPage.type === 'twocolumn') { MAX_CHARS *= 0.55; MAX_LINES *= 2; }
+    else if (['question', 'mcq'].includes(draftPage.type)) { MAX_CHARS *= 0.45; }
 
     const paginatableTypes = ['content', 'twocolumn', 'exam', 'question', 'mcq', 'preface', 'imagetext', 'notes'];
     let newPagesToAdd = [];
 
-    if (paginatableTypes.includes(draftPage.type) && draftPage.content && draftPage.content.length > MAX_CHARS_PER_PAGE) {
-      const chunks = chunkText(draftPage.content, MAX_CHARS_PER_PAGE, draftPage.type);
+    const rawCurrentLines = draftPage.content ? draftPage.content.split('\n').length : 0;
+    const currentQuestionCount = draftPage.content ? (draftPage.content.match(/\n\s*\d+[\.\)]/g) || []).length + 1 : 0;
+    const MAX_Q = draftPage.type === 'exam' ? 6 : (['question', 'mcq'].includes(draftPage.type) ? 4 : 999);
+    const currentLines = rawCurrentLines + (currentQuestionCount * 8);
+    
+    if (paginatableTypes.includes(draftPage.type) && draftPage.content && (draftPage.content.length > MAX_CHARS || currentLines > MAX_LINES || currentQuestionCount > MAX_Q)) {
+      const chunks = chunkText(draftPage.content, MAX_CHARS, MAX_LINES, draftPage.type);
       newPagesToAdd = chunks.map((chunk, index) => ({
         ...draftPage,
         id: Date.now() + index,
@@ -202,47 +262,155 @@ function App() {
     }
 
     try {
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'px',
-        format: pageSize === 'a5' ? 'a5' : (pageSize === 'letter' ? 'letter' : 'a4')
-      });
-
-      for (let i = 0; i < elements.length; i++) {
-        const el = elements[i];
-        const canvas = await html2canvas(el, {
-          scale: 2, // High resolution
-          useCORS: true,
-          logging: false
-        });
+      if (originalPdfBytes && pages.length > 0 && pages[0].type === 'pdfpage') {
+        // Native export using pdf-lib to retain original PDF text and vector data
+        const pdfDoc = await PDFDocument.load(originalPdfBytes);
+        const pdfPages = pdfDoc.getPages();
+        const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
         
-        const imgData = canvas.toDataURL('image/jpeg', 1.0);
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = pdf.internal.pageSize.getHeight();
+        // Helper to strip emojis and unsupported characters for WinAnsi standard fonts
+        const sanitizePdfText = (text) => {
+          if (!text) return '';
+          return text.replace(/[^\x20-\x7E\xA0-\xFF]/g, '');
+        };
         
-        if (i > 0) {
-          pdf.addPage();
-        }
-        
-        pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-
-        // Map the HTML link into the PDF coordinates so it's clickable in the exported file!
-        const brandingLinkElement = el.querySelector('.branding-link');
-        if (brandingLinkElement) {
-          const pageRect = el.getBoundingClientRect();
-          const linkRect = brandingLinkElement.getBoundingClientRect();
-          const scaleX = pdfWidth / pageRect.width;
-          const scaleY = pdfHeight / pageRect.height;
-          const x = (linkRect.left - pageRect.left) * scaleX;
-          const y = (linkRect.top - pageRect.top) * scaleY;
-          const w = linkRect.width * scaleX;
-          const h = linkRect.height * scaleY;
+        for (let i = 0; i < pdfPages.length; i++) {
+          const pdfPage = pdfPages[i];
+          const { width, height } = pdfPage.getSize();
           
-          pdf.link(x, y, w, h, { url: brandingLinkElement.href });
+          // The CSS page preview size is 794x1123
+          const cssWidth = 794;
+          const cssHeight = 1123;
+          
+          const scaleX = width / cssWidth;
+          const scaleY = height / cssHeight;
+          
+          // Draw global branding
+          if (brandingName) {
+             const safeBrandingName = sanitizePdfText(brandingName);
+             if (safeBrandingName) {
+               const textSize = 11 * scaleX;
+               const textWidth = boldFont.widthOfTextAtSize(safeBrandingName, textSize);
+               const textHeight = boldFont.heightAtSize(textSize);
+               
+               // Always centered at the bottom
+               const pdfX = (width - textWidth) / 2;
+               const pdfY = 30 * scaleY; // 30px from bottom (pdf-lib Y is from bottom up)
+               
+               // Draw solid white background for visibility
+               pdfPage.drawRectangle({
+                 x: pdfX - 4 * scaleX,
+                 y: pdfY - 4 * scaleY,
+                 width: textWidth + 8 * scaleX,
+                 height: textHeight + 8 * scaleY,
+                 color: rgb(1, 1, 1),
+               });
+               
+               pdfPage.drawText(safeBrandingName, {
+                 x: pdfX,
+                 y: pdfY,
+                 size: textSize, 
+                 font: boldFont,
+                 color: rgb(0.14, 0.38, 0.91), // Blue link color
+               });
+               
+               // Add Clickable Link Annotation
+               if (brandingLink) {
+                 const linkUrl = brandingLink.startsWith('http') ? brandingLink : `https://${brandingLink}`;
+                 
+                 const linkAnnot = pdfDoc.context.obj({
+                   Type: 'Annot',
+                   Subtype: 'Link',
+                   Rect: [pdfX - 2, pdfY - 2, pdfX + textWidth + 2, pdfY + textHeight + 2],
+                   Border: [0, 0, 0],
+                   A: {
+                     Type: 'Action',
+                     S: 'URI',
+                     URI: PDFString.of(linkUrl),
+                   },
+                 });
+                 
+                 let annots = pdfPage.node.Annots();
+                 if (!annots) {
+                   pdfPage.node.set(PDFName.of('Annots'), pdfDoc.context.obj([]));
+                   annots = pdfPage.node.Annots();
+                 }
+                 annots.push(linkAnnot);
+               }
+             }
+          }
+          
+          // Draw page-specific floating texts
+          const pageData = pages[i];
+          if (pageData && pageData.floatingTexts) {
+            for (const ft of pageData.floatingTexts) {
+               const safeText = sanitizePdfText(ft.text);
+               if (safeText) {
+                 const pdfX = ft.x * scaleX;
+                 const pdfY = height - (ft.y * scaleY) - (ft.size * scaleY);
+                 pdfPage.drawText(safeText, {
+                   x: pdfX,
+                   y: pdfY,
+                   size: ft.size * scaleX,
+                   color: rgb(0.1, 0.2, 0.36), // approximate #1a365d
+                 });
+               }
+            }
+          }
         }
+        
+        const pdfBytes = await pdfDoc.save();
+        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'Document.pdf';
+        link.click();
+        
+      } else {
+        // Raster export for standard generated pages
+        const pdf = new jsPDF({
+          orientation: 'portrait',
+          unit: 'px',
+          format: pageSize === 'a5' ? 'a5' : (pageSize === 'letter' ? 'letter' : 'a4')
+        });
+
+        for (let i = 0; i < elements.length; i++) {
+          const el = elements[i];
+          const canvas = await html2canvas(el, {
+            scale: 1, // Reduced to 1 to massively speed up export for large books
+            useCORS: true,
+            logging: false
+          });
+          
+          // Reduced from 1.0 to 0.8 to heavily reduce string length of the final PDF
+          const imgData = canvas.toDataURL('image/jpeg', 0.8);
+          const pdfWidth = pdf.internal.pageSize.getWidth();
+          const pdfHeight = pdf.internal.pageSize.getHeight();
+          
+          if (i > 0) {
+            pdf.addPage();
+          }
+          
+          pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
+
+          // Map the HTML link into the PDF coordinates so it's clickable in the exported file!
+          const brandingLinkElement = el.querySelector('.branding-link');
+          if (brandingLinkElement) {
+            const pageRect = el.getBoundingClientRect();
+            const linkRect = brandingLinkElement.getBoundingClientRect();
+            const scaleX = pdfWidth / pageRect.width;
+            const scaleY = pdfHeight / pageRect.height;
+            const x = (linkRect.left - pageRect.left) * scaleX;
+            const y = (linkRect.top - pageRect.top) * scaleY;
+            const w = linkRect.width * scaleX;
+            const h = linkRect.height * scaleY;
+            
+            pdf.link(x, y, w, h, { url: brandingLinkElement.href });
+          }
+        }
+        
+        pdf.save('Document.pdf');
       }
-      
-      pdf.save('Document.pdf');
     } catch (error) {
       console.error("Failed to generate PDF:", error);
       alert("An error occurred: " + error.message);
@@ -251,11 +419,73 @@ function App() {
     }
   };
 
+  const handleImportPDF = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      setOriginalPdfBytes(arrayBuffer.slice(0)); // Save a copy for native export to prevent detachment
+      
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const numPages = pdf.numPages;
+      const newPdfPages = [];
+
+      for (let i = 1; i <= numPages; i++) {
+        const page = await pdf.getPage(i);
+        const viewport = page.getViewport({ scale: 1.2 }); // Reduced scale to speed up import and export rendering
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+
+        await page.render({ canvasContext: context, viewport: viewport }).promise;
+        
+        // Use object URLs instead of massive base64 strings to prevent React lagging
+        const imgUrl = await new Promise(resolve => {
+          canvas.toBlob(blob => {
+            resolve(URL.createObjectURL(blob));
+          }, 'image/jpeg', 0.8);
+        });
+
+        newPdfPages.push({
+          id: Date.now() + i,
+          type: 'pdfpage',
+          title: '',
+          content: '',
+          backgroundImage: imgUrl,
+        });
+      }
+
+      setPages(newPdfPages);
+      setEditingPageId(null);
+      setDraftPage({ type: 'content', title: '', content: '' });
+    } catch (error) {
+      console.error("Error importing PDF:", error);
+      alert("Failed to import PDF.");
+    }
+    
+    // Reset file input
+    e.target.value = null;
+  };
+
   // Drag Handlers
   const handleElementMouseDown = (e, pageId, elementType, elementId = null) => {
     e.stopPropagation();
     e.preventDefault();
     const page = pages.find(p => p.id === pageId) || (draftPage.id === pageId || editingPageId === pageId ? draftPage : null);
+    
+    if (elementType === 'branding') {
+      setDraggingElement({
+        elementType: 'branding',
+        startX: e.clientX,
+        startY: e.clientY,
+        initialX: brandingX,
+        initialY: brandingY
+      });
+      return;
+    }
+
     if (!page) return;
 
     if (elementType === 'image-resize') {
@@ -324,6 +554,13 @@ function App() {
       e.preventDefault();
       
       const dx = (e.clientX - draggingElement.startX) / (zoom / 100);
+      const dy = (e.clientY - draggingElement.startY) / (zoom / 100);
+      
+      if (draggingElement.elementType === 'branding') {
+        setBrandingX(draggingElement.initialX + dx);
+        setBrandingY(draggingElement.initialY + dy);
+        return;
+      }
       
       if (draggingElement.elementType.endsWith('-resize')) {
         const isImage = draggingElement.elementType === 'image-resize';
@@ -358,7 +595,6 @@ function App() {
         return;
       }
       
-      const dy = (e.clientY - draggingElement.startY) / (zoom / 100);
       const newX = draggingElement.initialX + dx;
       const newY = draggingElement.initialY + dy;
       
@@ -722,6 +958,36 @@ function App() {
           </div>
         )}
 
+        {page.type === 'pdfpage' && (
+          <div 
+            className="page-inner-pdfpage" 
+            style={{ 
+              position: 'relative',
+              width: '100%', 
+              height: '100%', 
+              margin: 0, 
+              padding: 0,
+              backgroundColor: 'white'
+            }}
+          >
+            <img 
+              src={page.backgroundImage} 
+              alt="PDF Page" 
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                objectFit: 'fill',
+                zIndex: 0,
+                pointerEvents: 'none'
+              }}
+              crossOrigin="anonymous"
+            />
+          </div>
+        )}
+
         {/* Universal Floating Image rendered for ALL pages */}
         {page.image && (
           <div 
@@ -795,44 +1061,57 @@ function App() {
           </div>
         ))}
 
-        {/* Footer Area (Branding & Page Number) */}
-        <div style={{
-          position: 'absolute',
-          bottom: '30px',
-          left: '40px',
-          right: '40px',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          fontSize: '0.9rem',
-          fontWeight: 500,
-          color: '#666',
-          fontFamily: 'inherit'
-        }}>
-          {/* Centered Branding */}
-          {brandingName && (
-            <div style={{ textAlign: 'center' }}>
+        {/* Footer Area (Page Number Only) */}
+        {page.type !== 'pdfpage' && (
+          <div style={{ position: 'absolute', bottom: '30px', right: '40px', fontSize: '0.9rem', fontWeight: 500, color: '#666', fontFamily: 'inherit' }}>
+            {index + 1}
+          </div>
+        )}
+
+        {/* Global Branding Fixed at Bottom Center */}
+        {brandingName && (
+          <div 
+            className="floating-element-container"
+            style={{
+              position: 'absolute',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              bottom: '30px',
+              zIndex: 20
+            }}
+          >
+            <div
+              style={{
+                fontSize: '1rem',
+                fontWeight: 800,
+                color: '#2563eb',
+                fontFamily: 'inherit',
+                textAlign: 'center',
+                padding: '6px 12px',
+                border: '1px solid #e5e7eb',
+                boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                pointerEvents: 'auto',
+                background: '#ffffff',
+                borderRadius: '6px'
+              }}
+            >
               {brandingLink ? (
                 <a 
                   className="branding-link"
                   href={brandingLink.startsWith('http') ? brandingLink : `https://${brandingLink}`} 
                   target="_blank" 
                   rel="noopener noreferrer" 
-                  style={{ color: '#2563eb', textDecoration: 'underline', cursor: 'pointer', pointerEvents: 'auto' }}
+                  style={{ color: '#2563eb', textDecoration: 'underline', cursor: 'pointer', fontWeight: 800 }}
+                  onDragStart={(e) => e.preventDefault()}
                 >
                   {brandingName}
                 </a>
               ) : (
-                <span>{brandingName}</span>
+                <span style={{ fontWeight: 800, color: '#1f2937' }}>{brandingName}</span>
               )}
             </div>
-          )}
-          
-          {/* Page Number in Corner */}
-          <div style={{ position: 'absolute', right: 0 }}>
-            {index + 1}
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
@@ -1181,18 +1460,24 @@ function App() {
         </div>
 
         <div className="sidebar-footer">
-          <button 
-            className="btn-primary" 
-            onClick={handleDownloadPDF}
-            disabled={isExporting || pages.length === 0}
-            style={{ opacity: pages.length === 0 ? 0.5 : 1 }}
-          >
-            {isExporting ? 'Generating PDF...' : (
-              <>
-                <Download size={20} /> Export Book ({pages.length} Pages)
-              </>
-            )}
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button 
+              className="btn-primary" 
+              onClick={handleDownloadPDF}
+              disabled={isExporting || pages.length === 0}
+              style={{ opacity: pages.length === 0 ? 0.5 : 1, flex: 1 }}
+            >
+              {isExporting ? 'Generating PDF...' : (
+                <>
+                  <Download size={20} /> Export Book ({pages.length} Pages)
+                </>
+              )}
+            </button>
+            <label className="btn-secondary" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px', flex: 1 }}>
+              <Upload size={20} style={{ marginRight: '8px' }} /> Import PDF
+              <input type="file" accept="application/pdf" style={{ display: 'none' }} onChange={handleImportPDF} />
+            </label>
+          </div>
         </div>
       </div>
 
