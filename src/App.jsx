@@ -7,20 +7,138 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs
 import { PDFDocument, rgb, PDFName, PDFString, StandardFonts } from 'pdf-lib';
 import './App.css';
 
+const FormattingToolbar = ({ textareaId, value, onChange }) => {
+  const [color, setColor] = useState('#fef08a');
+  
+  const handleUndo = (e) => {
+    e.preventDefault();
+    const textarea = document.getElementById(textareaId);
+    if (textarea) {
+      textarea.focus();
+      document.execCommand('undo');
+    }
+  };
+
+  const handleRedo = (e) => {
+    e.preventDefault();
+    const textarea = document.getElementById(textareaId);
+    if (textarea) {
+      textarea.focus();
+      document.execCommand('redo');
+    }
+  };
+
+  const applyFormat = (e, type) => {
+    e.preventDefault(); // Prevent losing focus
+    const textarea = document.getElementById(textareaId);
+    if (!textarea) return;
+    
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    if (start === end) return;
+    
+    const selected = value.substring(start, end);
+    let replacement = selected;
+    
+    if (type === 'bold') {
+      if (selected.startsWith('<b>') && selected.endsWith('</b>')) {
+        replacement = selected.slice(3, -4);
+      } else {
+        replacement = `<b>${selected}</b>`;
+      }
+    } else if (type === 'highlight') {
+      if (selected.startsWith('<mark') && selected.endsWith('</mark>')) {
+        replacement = selected.replace(/^<mark[^>]*>|<\/mark>$/g, '');
+      } else {
+        replacement = `<mark style="background-color: ${color}; padding: 0 4px; border-radius: 4px;">${selected}</mark>`;
+      }
+    }
+    
+    // Focus and select the text to replace
+    textarea.focus();
+    textarea.setSelectionRange(start, end);
+    
+    // Use execCommand to preserve the native Undo/Redo stack!
+    // This natively fires the 'input' event which React catches to update state.
+    const success = document.execCommand('insertText', false, replacement);
+    
+    if (!success) {
+      // Fallback for browsers that block execCommand (unlikely for textareas, but just in case)
+      const newValue = value.substring(0, start) + replacement + value.substring(end);
+      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+      nativeInputValueSetter.call(textarea, newValue);
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start, start + replacement.length);
+    }, 10);
+  };
+  
+  return (
+    <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', padding: '6px 8px', background: '#f3f4f6', borderRadius: '6px', alignItems: 'center', border: '1px solid #e5e7eb' }}>
+      <button onMouseDown={handleUndo} style={{ padding: '4px 8px', background: 'white', border: '1px solid #d1d5db', borderRadius: '4px', cursor: 'pointer', color: '#374151', fontSize: '0.8rem' }} title="Undo (Ctrl+Z)">↩️ Undo</button>
+      <button onMouseDown={handleRedo} style={{ padding: '4px 8px', background: 'white', border: '1px solid #d1d5db', borderRadius: '4px', cursor: 'pointer', color: '#374151', fontSize: '0.8rem' }} title="Redo (Ctrl+Y)">↪️ Redo</button>
+      <div style={{ width: '1px', height: '24px', background: '#d1d5db', margin: '0 4px' }}></div>
+      <button onMouseDown={(e) => applyFormat(e, 'bold')} style={{ fontWeight: 'bold', padding: '4px 12px', background: 'white', border: '1px solid #d1d5db', borderRadius: '4px', cursor: 'pointer', color: '#111827' }} title="Bold">B</button>
+      <button onMouseDown={(e) => applyFormat(e, 'highlight')} style={{ padding: '4px 12px', background: 'white', border: '1px solid #d1d5db', borderRadius: '4px', cursor: 'pointer', color: '#111827' }} title="Highlight">Highlight</button>
+      <input type="color" value={color} onChange={e => setColor(e.target.value)} style={{ height: '28px', width: '36px', border: 'none', cursor: 'pointer', background: 'transparent', padding: 0 }} title="Highlight Color" />
+    </div>
+  );
+};
+
+const RichTextarea = ({ id, value, onChange, placeholder, rows }) => {
+  return (
+    <div className="rich-textarea-container" style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+      <FormattingToolbar textareaId={id} value={value || ''} onChange={onChange} />
+      <textarea 
+        id={id}
+        className="form-control" 
+        value={value || ''} 
+        onChange={e => onChange(e.target.value)} 
+        placeholder={placeholder} 
+        rows={rows} 
+      />
+    </div>
+  );
+};
+
 function App() {
-  const [template, setTemplate] = useState('classic');
+  const getSavedState = (key, defaultValue) => {
+    try {
+      const item = window.localStorage.getItem(key);
+      return item ? JSON.parse(item) : defaultValue;
+    } catch (error) {
+      console.error(error);
+      return defaultValue;
+    }
+  };
+
+  const initialDraftPage = {
+    type: 'cover',
+    title: 'The Enchanted Forest',
+    subtitle: 'A Tale of Magic and Mystery',
+    author: 'Jane Austen',
+    content: 'The cold winds howled through the ancient trees, their branches twisting like skeletal fingers against the twilight sky. Elara pulled her cloak tighter, her heart pounding a steady rhythm against her ribs.\n\nShe had been warned about the Whispering Woods, but the map in her trembling hands left no room for doubt. The artifact lay hidden somewhere in its depths.',
+    image: ''
+  };
+
+  const [template, setTemplate] = useState(() => getSavedState('bookforge_template', 'classic'));
   const [isExporting, setIsExporting] = useState(false);
-  const [fontSize, setFontSize] = useState('medium');
-  const [pageSize, setPageSize] = useState('a4'); // a4, a5, letter
-  const [zoom, setZoom] = useState(70); // default zoom
-  const [editingPageId, setEditingPageId] = useState(null);
-  const [isGlobalLayout, setIsGlobalLayout] = useState(false);
-  const [brandingName, setBrandingName] = useState('');
-  const [brandingLink, setBrandingLink] = useState('');
-  const [brandingX, setBrandingX] = useState(350);
-  const [brandingY, setBrandingY] = useState(1050);
-  const [brandingSize, setBrandingSize] = useState(16);
-  const [isBrandingFree, setIsBrandingFree] = useState(false);
+  const [fontSize, setFontSize] = useState(() => getSavedState('bookforge_fontSize', 'medium'));
+  const [pageSize, setPageSize] = useState(() => getSavedState('bookforge_pageSize', 'a4'));
+  const [zoom, setZoom] = useState(() => getSavedState('bookforge_zoom', 70));
+  const [editingPageId, setEditingPageId] = useState(() => getSavedState('bookforge_editingPageId', null));
+  const [isGlobalLayout, setIsGlobalLayout] = useState(() => getSavedState('bookforge_isGlobalLayout', false));
+  const [brandingName, setBrandingName] = useState(() => getSavedState('bookforge_brandingName', ''));
+  const [brandingLink, setBrandingLink] = useState(() => getSavedState('bookforge_brandingLink', ''));
+  const [brandingX, setBrandingX] = useState(() => getSavedState('bookforge_brandingX', 350));
+  const [brandingY, setBrandingY] = useState(() => getSavedState('bookforge_brandingY', 1050));
+  const [brandingSize, setBrandingSize] = useState(() => getSavedState('bookforge_brandingSize', 16));
+  const [isBrandingFree, setIsBrandingFree] = useState(() => getSavedState('bookforge_isBrandingFree', false));
+  const [pages, setPages] = useState(() => getSavedState('bookforge_pages', [{ ...initialDraftPage, id: Date.now() }]));
+  const [draftPage, setDraftPage] = useState(() => getSavedState('bookforge_draftPage', initialDraftPage));
   const [originalPdfBytes, setOriginalPdfBytes] = useState(null);
 
   // Drag and Pan State
@@ -34,19 +152,30 @@ function App() {
   const handleZoomOut = () => setZoom(prev => Math.max(prev - 10, 20));
   const handleZoomReset = () => setZoom(70);
 
-  const initialDraftPage = {
-    type: 'cover',
-    title: 'The Enchanted Forest',
-    subtitle: 'A Tale of Magic and Mystery',
-    author: 'Jane Austen',
-    content: 'The cold winds howled through the ancient trees, their branches twisting like skeletal fingers against the twilight sky. Elara pulled her cloak tighter, her heart pounding a steady rhythm against her ribs.\n\nShe had been warned about the Whispering Woods, but the map in her trembling hands left no room for doubt. The artifact lay hidden somewhere in its depths.',
-    image: ''
-  };
-
-  // Maintain array of all added pages
-  const [pages, setPages] = useState([{ ...initialDraftPage, id: Date.now() }]);
-  
-  const [draftPage, setDraftPage] = useState(initialDraftPage);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('bookforge_template', JSON.stringify(template));
+      window.localStorage.setItem('bookforge_fontSize', JSON.stringify(fontSize));
+      window.localStorage.setItem('bookforge_pageSize', JSON.stringify(pageSize));
+      window.localStorage.setItem('bookforge_zoom', JSON.stringify(zoom));
+      window.localStorage.setItem('bookforge_isGlobalLayout', JSON.stringify(isGlobalLayout));
+      window.localStorage.setItem('bookforge_brandingName', JSON.stringify(brandingName));
+      window.localStorage.setItem('bookforge_brandingLink', JSON.stringify(brandingLink));
+      window.localStorage.setItem('bookforge_brandingX', JSON.stringify(brandingX));
+      window.localStorage.setItem('bookforge_brandingY', JSON.stringify(brandingY));
+      window.localStorage.setItem('bookforge_brandingSize', JSON.stringify(brandingSize));
+      window.localStorage.setItem('bookforge_isBrandingFree', JSON.stringify(isBrandingFree));
+      window.localStorage.setItem('bookforge_pages', JSON.stringify(pages));
+      window.localStorage.setItem('bookforge_draftPage', JSON.stringify(draftPage));
+      window.localStorage.setItem('bookforge_editingPageId', JSON.stringify(editingPageId));
+    } catch (error) {
+      console.error("Failed to save state to localStorage", error);
+    }
+  }, [
+    template, fontSize, pageSize, zoom, isGlobalLayout,
+    brandingName, brandingLink, brandingX, brandingY, brandingSize, isBrandingFree,
+    pages, draftPage, editingPageId
+  ]);
 
   const PAGE_TYPES = [
     { id: 'cover', label: 'Title / Cover Page' },
@@ -115,6 +244,32 @@ function App() {
           }
           if (match.index > maxChars || subLines > maxLines) break;
         }
+      } else if (type === 'toc') {
+        let currentPos = 0;
+        let currentItems = 0;
+        const TOC_MAX_ITEMS = Math.max(10, Math.floor(maxLines * 0.7)); // TOC items have gaps
+        
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          const isHeading = /^(PART|SECTION|UNIT|MODULE)\b/i.test(line.trim());
+          
+          if (currentItems + 1 > TOC_MAX_ITEMS) {
+            // We need to break. Check if we should break BEFORE this line or the previous line
+            if (isHeading) {
+               breakPoint = currentPos;
+            } else if (i > 0 && /^(PART|SECTION|UNIT|MODULE)\b/i.test(lines[i-1].trim())) {
+               // Previous line was a heading, don't strand it. Break before previous line.
+               breakPoint = currentPos - lines[i-1].length - 1;
+            } else {
+               breakPoint = currentPos;
+            }
+            if (breakPoint <= 0) breakPoint = currentPos > 0 ? currentPos : line.length;
+            break;
+          }
+          
+          currentItems++;
+          currentPos += line.length + 1;
+        }
       }
       
       if (breakPoint === -1) {
@@ -161,15 +316,16 @@ function App() {
         // Lines remain the same for single column, but chars are heavily restricted
       }
       
-      const paginatableTypes = ['content', 'twocolumn', 'exam', 'question', 'mcq', 'preface', 'imagetext', 'notes'];
+      const paginatableTypes = ['content', 'twocolumn', 'exam', 'question', 'mcq', 'preface', 'imagetext', 'notes', 'toc'];
 
       if (paginatableTypes.includes(draftPage.type) && draftPage.content) {
          const rawCurrentLines = draftPage.content.split('\n').length;
          const currentQuestionCount = (draftPage.content.match(/\n\s*\d+[\.\)]/g) || []).length + 1;
          const MAX_Q = draftPage.type === 'exam' ? 6 : (['question', 'mcq'].includes(draftPage.type) ? 4 : 999);
          const currentLines = rawCurrentLines + (currentQuestionCount * 8);
+         const isTocOverflow = draftPage.type === 'toc' && rawCurrentLines > Math.max(10, Math.floor(MAX_LINES * 0.7));
          
-         if (draftPage.content.length > MAX_CHARS || currentLines > MAX_LINES || currentQuestionCount > MAX_Q) {
+         if (draftPage.content.length > MAX_CHARS || currentLines > MAX_LINES || currentQuestionCount > MAX_Q || isTocOverflow) {
            const chunks = chunkText(draftPage.content, MAX_CHARS, MAX_LINES, draftPage.type);
            
            if (chunks.length > 1) {
@@ -211,15 +367,16 @@ function App() {
     else if (draftPage.type === 'twocolumn') { MAX_CHARS *= 0.55; MAX_LINES *= 2; }
     else if (['question', 'mcq'].includes(draftPage.type)) { MAX_CHARS *= 0.45; }
 
-    const paginatableTypes = ['content', 'twocolumn', 'exam', 'question', 'mcq', 'preface', 'imagetext', 'notes'];
+    const paginatableTypes = ['content', 'twocolumn', 'exam', 'question', 'mcq', 'preface', 'imagetext', 'notes', 'toc'];
     let newPagesToAdd = [];
 
     const rawCurrentLines = draftPage.content ? draftPage.content.split('\n').length : 0;
     const currentQuestionCount = draftPage.content ? (draftPage.content.match(/\n\s*\d+[\.\)]/g) || []).length + 1 : 0;
     const MAX_Q = draftPage.type === 'exam' ? 6 : (['question', 'mcq'].includes(draftPage.type) ? 4 : 999);
     const currentLines = rawCurrentLines + (currentQuestionCount * 8);
+    const isTocOverflow = draftPage.type === 'toc' && rawCurrentLines > Math.max(10, Math.floor(MAX_LINES * 0.7));
     
-    if (paginatableTypes.includes(draftPage.type) && draftPage.content && (draftPage.content.length > MAX_CHARS || currentLines > MAX_LINES || currentQuestionCount > MAX_Q)) {
+    if (paginatableTypes.includes(draftPage.type) && draftPage.content && (draftPage.content.length > MAX_CHARS || currentLines > MAX_LINES || currentQuestionCount > MAX_Q || isTocOverflow)) {
       const chunks = chunkText(draftPage.content, MAX_CHARS, MAX_LINES, draftPage.type);
       newPagesToAdd = chunks.map((chunk, index) => ({
         ...draftPage,
@@ -679,25 +836,227 @@ function App() {
   };
 
   // Helper to automatically wrap question numbers in .q-num and .mcq-question for beautiful styling
-  const parseQuestionNumbers = (text) => {
+  const parseQuestionNumbers = (text, type = 'content') => {
     if (typeof text !== 'string') return text;
     const lines = text.split('\n');
-    return lines.map((line, i) => {
-      const match = line.match(/^(\s*\d+[\.\)])(.*)/);
-      if (match) {
-        return (
-          <div key={i} className="mcq-question">
-            <span className="q-num">{match[1]}</span>{match[2]}
+    const elements = [];
+    
+    let inList1 = false;
+    let inList2 = false;
+    let inStatements = false;
+    let isMatchingQuestion = false;
+    
+    let list1Header = '';
+    let list2Header = '';
+    let list1Items = [];
+    let list2Items = [];
+    
+    let statementCounter = 1;
+    let list2Counter = 1;
+    let hasMainQuestion = false;
+
+    const flushLists = () => {
+      if (list1Items.length > 0 || list2Items.length > 0) {
+        elements.push(
+          <div key={`match-${elements.length}`} className="matching-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', margin: '15px 0' }}>
+            <div>
+              <div style={{ fontWeight: 'bold', marginBottom: '8px', borderBottom: '1px solid #c8a97e', paddingBottom: '4px', color: '#1a365d' }}>{list1Header || 'List I'}</div>
+              {list1Items.map((item, idx) => <div key={`l1-${idx}`} style={{ marginBottom: '6px' }}>{item}</div>)}
+            </div>
+            <div>
+              <div style={{ fontWeight: 'bold', marginBottom: '8px', borderBottom: '1px solid #c8a97e', paddingBottom: '4px', color: '#1a365d' }}>{list2Header || 'List II'}</div>
+              {list2Items.map((item, idx) => <div key={`l2-${idx}`} style={{ marginBottom: '6px' }}>{item}</div>)}
+            </div>
           </div>
         );
+        list1Items = [];
+        list2Items = [];
+        inList1 = false;
+        inList2 = false;
       }
-      return (
-        <React.Fragment key={i}>
-          {line}
+    };
+
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i];
+      let trimmedLine = line.trim();
+      
+      if (!trimmedLine) {
+        // Handle empty lines and potential list flushing
+        if (inList2 && list2Items.length > 0 && i + 1 < lines.length && /^[A-D]\./.test(lines[i+1].trim())) {
+           flushLists();
+        } else if (inList2 && list2Items.length >= list1Items.length && list1Items.length > 0) {
+           flushLists();
+        }
+        
+        if (!inList1 && !inList2) {
+          elements.push(<br key={`br-${i}`} />);
+        }
+        continue;
+      }
+
+      if (/^List\s*[-–—]?\s*I\b/i.test(trimmedLine)) {
+        flushLists();
+        inList1 = true;
+        inList2 = false;
+        inStatements = false;
+        
+        // Check if the header contains both List I and List II (side-by-side format)
+        if (/^List\s*[-–—]?\s*I\s+List\s*[-–—]?\s*II/i.test(trimmedLine)) {
+           list1Header = 'List I';
+           list2Header = 'List II';
+        } else {
+           list1Header = trimmedLine;
+           list2Header = 'List II';
+        }
+        continue;
+      }
+      
+      if (/^List\s*[-–—]?\s*II\b/i.test(trimmedLine)) {
+        inList1 = false;
+        inList2 = true;
+        inStatements = false;
+        list2Header = trimmedLine;
+        list2Counter = 1;
+        continue;
+      }
+      
+      // Implicit Matching Question Detection (if missing headers)
+      if (isMatchingQuestion && !inList1 && !inList2 && /^[A-D]\.\s*[^A-Z-]/i.test(trimmedLine)) {
+         // It starts with A. but is not an option like A. A-3
+         if (!/^[A-D]\.\s*[A-Z]-/.test(trimmedLine)) {
+            inList1 = true;
+            list1Header = 'List I';
+            list2Header = 'List II';
+         }
+      }
+      
+      if (inList1) {
+        // Exit list 1 if we hit options or commands
+        if (/^[A-D]\.\s*[A-Z]-/.test(trimmedLine) || /^(Codes?:|Options?:|Select\s+|Exam:|Year:)/i.test(trimmedLine) || /^[A-D]\s+A-/.test(trimmedLine)) {
+           flushLists();
+           // Process normally below
+        } else if (isMatchingQuestion && !/^List\s*[-–—]?\s*I/i.test(list1Header)) {
+           // For implicit matching, transition to List 2 if it doesn't start with A-E.
+           if (!/^[A-E]\./i.test(trimmedLine)) {
+               inList1 = false;
+               inList2 = true;
+               list2Counter = 1;
+               // Fall through to inList2 processing
+           } else {
+               list1Items.push(trimmedLine);
+               continue;
+           }
+        } else {
+           // Check for side-by-side formatting like "A. Treaty   1. 1782"
+           let sideBySideMatch = trimmedLine.match(/^([A-D]\..+?)\s+(\d+[\.\)].+)$/);
+           if (sideBySideMatch) {
+              list1Items.push(sideBySideMatch[1].trim());
+              list2Items.push(sideBySideMatch[2].trim());
+           } else {
+              list1Items.push(trimmedLine);
+           }
+           continue;
+        }
+      }
+      
+      if (inList2) {
+        let match = trimmedLine.match(/^(\d+)[\.\)]\s*(.*)/);
+        if (match) {
+          list2Items.push(trimmedLine);
+          list2Counter = parseInt(match[1]) + 1;
+        } else {
+          // If it's the start of options, flush and process normally
+          if (/^[A-D]\.\s*[A-Z]-/.test(trimmedLine) || /^(Codes?:|Options?:|Select\s+)/i.test(trimmedLine) || /^[A-D]\s+A-/.test(trimmedLine)) {
+            flushLists();
+            // We do NOT continue here, so the line is processed normally outside the list
+          } else {
+            list2Items.push(`${list2Counter}. ${trimmedLine}`);
+            list2Counter++;
+            continue;
+          }
+        }
+      }
+
+      // Check for statement context
+      if (/(statements?:|consider the following:?|following pairs:?)/i.test(trimmedLine)) {
+        inStatements = true;
+        statementCounter = 1;
+      } else if (inStatements && /^[A-D]\./.test(trimmedLine)) {
+        inStatements = false;
+      } else if (inStatements && trimmedLine.match(/^(which of the|how many of|select the correct|codes?:)/i)) {
+        inStatements = false;
+      }
+
+      const qMatch = line.match(/^(\s*\d+[\.\)])(.*)/);
+      if (qMatch) {
+        // Check if the question text indicates a matching question
+        if (/(match the following|match list|match items)/i.test(qMatch[2])) {
+           isMatchingQuestion = true;
+        }
+        
+        // Determine if this is a main question or a sub-question (statement)
+        let isMainQuestion = false;
+        
+        if (!hasMainQuestion) {
+           isMainQuestion = true;
+        } else {
+           if (type === 'exam') {
+              isMainQuestion = false;
+           } else {
+              if (!inStatements) {
+                 isMainQuestion = true;
+              }
+           }
+        }
+        
+        if (!isMainQuestion) {
+          elements.push(
+            <div key={`stmt-${i}`} style={{ paddingLeft: '20px', marginBottom: '8px' }}>
+              <span dangerouslySetInnerHTML={{ __html: line }} />
+            </div>
+          );
+        } else {
+          hasMainQuestion = true;
+          elements.push(
+            <div key={`q-${i}`} className="mcq-question">
+              <span className="q-num">{qMatch[1]}</span>
+              <span dangerouslySetInnerHTML={{ __html: qMatch[2] }} />
+            </div>
+          );
+        }
+        continue;
+      }
+      
+      // Check if normal text line indicates a matching question
+      if (/(match the following|match list|match items)/i.test(trimmedLine)) {
+         isMatchingQuestion = true;
+      }
+      
+      // Auto-number statements if they are missing numbers
+      if (inStatements) {
+         let match = trimmedLine.match(/^([IVX]+|\d+)[\.\)]\s*(.*)/i);
+         if (!match && !trimmedLine.match(/^(which of the|select the correct|codes?:)/i) && !/(statements?:|consider the following:?)/i.test(trimmedLine)) {
+            elements.push(
+              <div key={`stmt-add-${i}`} style={{ paddingLeft: '20px', marginBottom: '8px' }}>
+                <span dangerouslySetInnerHTML={{ __html: `${statementCounter}. ${line}` }} />
+              </div>
+            );
+            statementCounter++;
+            continue;
+         }
+      }
+
+      elements.push(
+        <React.Fragment key={`text-${i}`}>
+          <span dangerouslySetInnerHTML={{ __html: line }} />
           {i < lines.length - 1 ? '\n' : ''}
         </React.Fragment>
       );
-    });
+    }
+    
+    flushLists();
+    
+    return elements;
   };
 
   // Helper function to get font size style based on user selection
@@ -851,21 +1210,55 @@ function App() {
           <div className="page-inner-copyright">
             <h4>© {page.subtitle} {page.author}</h4>
             <h5>Published by {page.title}</h5>
-            <div className="content-body" style={{ fontSize: fontSize === 'tiny' ? '0.7rem' : (fontSize === 'small' ? '0.8rem' : '0.9rem') }}>{page.content}</div>
+            <div className="content-body" style={{ fontSize: fontSize === 'tiny' ? '0.7rem' : (fontSize === 'small' ? '0.8rem' : '0.9rem') }} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
           </div>
         )}
 
         {page.type === 'preface' && (
           <div className="page-inner-preface">
             <h2 className="preface-title">{page.title || 'Preface'}</h2>
-            <div className="content-body" style={getFontSizeStyle()}>{page.content}</div>
+            <div className="content-body" style={getFontSizeStyle()} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
           </div>
         )}
 
         {page.type === 'toc' && (
           <div className="page-inner-toc">
             <h2 className="toc-title">{page.title || 'Table of Contents'}</h2>
-            {pages.some(p => p.type === 'chapter') ? (
+            {page.content ? (
+              <div className="toc-list custom-toc" style={getFontSizeStyle()}>
+                {page.content.split('\n').map((line, idx) => {
+                  if (!line.trim()) return null;
+                  
+                  let title = line.trim();
+                  let pageNum = '';
+                  
+                  // Try to match a trailing number preceded by dots, tabs, or multiple spaces
+                  let match = title.match(/^(.*?)(?:\.{2,}|\s{2,}|\t+|-{2,})\s*(\d+)$/);
+                  if (match) {
+                    title = match[1].trim();
+                    pageNum = match[2];
+                  } else {
+                    // Try to match a trailing number preceded by a single space, assuming it's a page number
+                    match = title.match(/^(.*?)\s+(\d+)$/);
+                    if (match) {
+                      title = match[1].trim();
+                      pageNum = match[2];
+                    }
+                  }
+                  
+                  // Strip any trailing dots/dashes
+                  title = title.replace(/[\.\-]+\s*$/, '');
+                  
+                  return (
+                    <div key={idx} className="toc-item">
+                      <span className="toc-chapter-title" dangerouslySetInnerHTML={{ __html: title }} />
+                      <span className="toc-dots"></span>
+                      <span className="toc-page-num">{pageNum}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : pages.some(p => p.type === 'chapter') ? (
               <div className="toc-list">
                 {pages.map((p, i) => {
                   if (p.type === 'chapter') {
@@ -882,7 +1275,7 @@ function App() {
               </div>
             ) : (
               <div className="content-body toc-body" style={getFontSizeStyle()}>
-                {page.content || 'Add Chapter pages to your book to automatically generate the Table of Contents here.'}
+                Paste your syllabus or add Chapter pages to automatically generate the Table of Contents here.
               </div>
             )}
           </div>
@@ -898,18 +1291,14 @@ function App() {
         {page.type === 'content' && (
           <div className="page-inner-content">
             {page.title && <div className="content-title">{page.title}</div>}
-            <div className="content-body" style={getFontSizeStyle()}>
-              {page.content}
-            </div>
+            <div className="content-body" style={getFontSizeStyle()} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
           </div>
         )}
 
         {page.type === 'twocolumn' && (
           <div className="page-inner-twocolumn">
             {page.title && <div className="content-title">{page.title}</div>}
-            <div className="content-body two-column" style={getFontSizeStyle()}>
-              {page.content}
-            </div>
+            <div className="content-body two-column" style={getFontSizeStyle()} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
           </div>
         )}
 
@@ -928,12 +1317,10 @@ function App() {
                     {parts.map((part, pIdx) => {
                       if (part.trim().toLowerCase().startsWith('answer:') || part.trim().toLowerCase().startsWith('ans:')) {
                         return (
-                          <div key={pIdx} className="exam-answer-highlight">
-                            {part.trim()}
-                          </div>
+                          <div key={pIdx} className="exam-answer-highlight" dangerouslySetInnerHTML={{ __html: part.trim() }} />
                         );
                       }
-                      return <span key={pIdx}>{parseQuestionNumbers(part)}</span>;
+                      return <span key={pIdx}>{parseQuestionNumbers(part, page.type)}</span>;
                     })}
                   </div>
                 );
@@ -946,7 +1333,7 @@ function App() {
           <div className="page-inner-question">
             {page.title && <div className="content-title">{page.title}</div>}
             <div className="content-body question-body" style={getFontSizeStyle()}>
-              {parseQuestionNumbers(page.content)}
+              {parseQuestionNumbers(page.content, page.type)}
             </div>
           </div>
         )}
@@ -955,7 +1342,7 @@ function App() {
           <div className="page-inner-mcq">
             {page.title && <div className="content-title">{page.title}</div>}
             <div className="content-body mcq-body" style={getFontSizeStyle()}>
-              {parseQuestionNumbers(page.content)}
+              {parseQuestionNumbers(page.content, page.type)}
             </div>
           </div>
         )}
@@ -963,25 +1350,21 @@ function App() {
         {page.type === 'notes' && (
           <div className="page-inner-notes">
             {page.title && <div className="content-title">{page.title}</div>}
-            <div className="content-body notes-body" style={getFontSizeStyle()}>
-              {page.content}
-            </div>
+            <div className="content-body notes-body" style={getFontSizeStyle()} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
           </div>
         )}
 
         {page.type === 'imagetext' && (
           <div className="page-inner-imagetext">
             {page.title && <div className="content-title">{page.title}</div>}
-            <div className="content-body" style={getFontSizeStyle()}>
-              {page.content}
-            </div>
+            <div className="content-body" style={getFontSizeStyle()} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
           </div>
         )}
 
         {page.type === 'backcover' && (
           <div className="page-inner-backcover">
             <h1>{page.title}</h1>
-            <div className="content-body" style={getFontSizeStyle()}>{page.content}</div>
+            <div className="content-body" style={getFontSizeStyle()} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
           </div>
         )}
 
@@ -1351,7 +1734,7 @@ function App() {
                     </div>
                     <div className="form-group">
                       <label><AlignLeft /> Copyright Info / ISBN</label>
-                      <textarea className="form-control" value={draftPage.content} onChange={e => handleUpdateDraft('content', e.target.value)} placeholder="All rights reserved..." rows={5} />
+                      <RichTextarea id="ta-copyright" value={draftPage.content} onChange={val => handleUpdateDraft('content', val)} placeholder="All rights reserved..." rows={5} />
                     </div>
                   </>
                 );
@@ -1392,7 +1775,7 @@ function App() {
                     </div>
                     <div className="form-group">
                       <label><AlignLeft /> Page Content</label>
-                      <textarea className="form-control" value={draftPage.content} onChange={e => handleUpdateDraft('content', e.target.value)} placeholder="Text below image..." rows={8} />
+                      <RichTextarea id="ta-imagetext" value={draftPage.content} onChange={val => handleUpdateDraft('content', val)} placeholder="Text below image..." rows={8} />
                     </div>
                   </>
                 );
@@ -1413,7 +1796,7 @@ function App() {
                     </div>
                     <div className="form-group">
                       <label><AlignLeft /> Page Content</label>
-                      <textarea className="form-control" value={draftPage.content} onChange={e => handleUpdateDraft('content', e.target.value)} placeholder="Content..." rows={10} />
+                      <RichTextarea id="ta-content" value={draftPage.content} onChange={val => handleUpdateDraft('content', val)} placeholder="Content..." rows={10} />
                     </div>
                   </>
                 );
