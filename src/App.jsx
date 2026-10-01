@@ -478,24 +478,24 @@ const RichTextarea = ({ id, value, onChange, placeholder, rows }) => {
           </div>
         ) : page.type === 'cover' && (
           <div className="page-inner-cover">
-            <h1>{page.title}</h1>
-            {page.subtitle && <h2>{page.subtitle}</h2>}
-            <h3>{page.author}</h3>
+            <h1 contentEditable={!isExporting} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'title', e.target.innerText)}>{page.title}</h1>
+            {page.subtitle && <h2 contentEditable={!isExporting} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'subtitle', e.target.innerText)}>{page.subtitle}</h2>}
+            <h3 contentEditable={!isExporting} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'author', e.target.innerText)}>{page.author}</h3>
           </div>
         )}
         
         {page.type === 'copyright' && (
           <div className="page-inner-copyright">
-            <h4>© {page.subtitle} {page.author}</h4>
-            <h5>Published by {page.title}</h5>
-            <div className="content-body" style={{ fontSize: fontSize === 'tiny' ? '0.7rem' : (fontSize === 'small' ? '0.8rem' : '0.9rem') }} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
+            <h4>© <span contentEditable={!isExporting} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'subtitle', e.target.innerText)}>{page.subtitle}</span> <span contentEditable={!isExporting} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'author', e.target.innerText)}>{page.author}</span></h4>
+            <h5>Published by <span contentEditable={!isExporting} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'title', e.target.innerText)}>{page.title}</span></h5>
+            <div className="content-body" style={{ fontSize: fontSize === 'tiny' ? '0.7rem' : (fontSize === 'small' ? '0.8rem' : '0.9rem') }} contentEditable={!isExporting} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'content', e.target.innerText)} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
           </div>
         )}
 
         {page.type === 'preface' && (
           <div className="page-inner-preface">
-            <h2 className="preface-title">{page.title || 'Preface'}</h2>
-            <div className="content-body" style={getFontSizeStyle(fontSize)} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
+            <h2 className="preface-title" contentEditable={!isExporting} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'title', e.target.innerText)}>{page.title || 'Preface'}</h2>
+            <div className="content-body" style={getFontSizeStyle(fontSize)} contentEditable={!isExporting} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'content', e.target.innerText)} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
           </div>
         )}
 
@@ -561,29 +561,29 @@ const RichTextarea = ({ id, value, onChange, placeholder, rows }) => {
 
         {page.type === 'chapter' && (
           <div className="page-inner-chapter">
-            {page.subtitle && <h3 className="chapter-number">{page.subtitle}</h3>}
-            <h1 className="chapter-title">{page.title}</h1>
+            {page.subtitle && <h3 className="chapter-number" contentEditable={!isExporting} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'subtitle', e.target.innerText)}>{page.subtitle}</h3>}
+            <h1 className="chapter-title" contentEditable={!isExporting} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'title', e.target.innerText)}>{page.title}</h1>
           </div>
         )}
 
         {page.type === 'content' && (
           <div className="page-inner-content">
-            {page.title && <div className="content-title">{page.title}</div>}
-            <div className="content-body" style={getFontSizeStyle(fontSize)} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
+            {page.title && <div className="content-title" contentEditable={!isExporting} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'title', e.target.innerText)}>{page.title}</div>}
+            <div className="content-body" style={getFontSizeStyle(fontSize)} contentEditable={!isExporting} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'content', e.target.innerText)} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
           </div>
         )}
 
         {page.type === 'twocolumn' && (
           <div className="page-inner-twocolumn">
-            {page.title && <div className="content-title">{page.title}</div>}
-            <div className="content-body two-column" style={getFontSizeStyle(fontSize)} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
+            {page.title && <div className="content-title" contentEditable={!isExporting} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'title', e.target.innerText)}>{page.title}</div>}
+            <div className="content-body two-column" style={getFontSizeStyle(fontSize)} contentEditable={!isExporting} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'content', e.target.innerText)} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
           </div>
         )}
 
-        {page.['exam', 'gridexam'].includes(type) && (
+        {page.type === 'exam' && (
           <div className="page-inner-exam">
-            {page.title && <div className="content-title">{page.title}</div>}
-            <div className="content-body exam-body" style={getFontSizeStyle(fontSize)}>
+            {page.title && <div className="content-title" contentEditable={!isExporting} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'title', e.target.innerText)}>{page.title}</div>}
+            <div className="content-body exam-body" style={getFontSizeStyle(fontSize)} contentEditable={!isExporting} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'content', e.target.innerText)}>
               {(page.content || '').split(/(?=\n\s*\d+[\.\)])/).map((block, i) => {
                 if (!block.trim()) return null;
                 
@@ -609,7 +609,7 @@ const RichTextarea = ({ id, value, onChange, placeholder, rows }) => {
 
         {page.type === 'question' && (
           <div className="page-inner-question">
-            {page.title && <div className="content-title">{page.title}</div>}
+            {page.title && <div className="content-title" contentEditable={!isExporting} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'title', e.target.innerText)}>{page.title}</div>}
             <div className="content-body question-body" style={getFontSizeStyle(fontSize)}>
               {parseQuestionNumbers(page.content, page.type)}
             </div>
@@ -618,8 +618,8 @@ const RichTextarea = ({ id, value, onChange, placeholder, rows }) => {
 
         {page.type === 'mcq' && (
           <div className="page-inner-mcq">
-            {page.title && <div className="content-title">{page.title}</div>}
-            <div className="content-body mcq-body" style={getFontSizeStyle(fontSize)}>
+            {page.title && <div className="content-title" contentEditable={!isExporting} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'title', e.target.innerText)}>{page.title}</div>}
+            <div className="content-body mcq-body" style={getFontSizeStyle(fontSize)} contentEditable={!isExporting} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'content', e.target.innerText)}>
               {parseQuestionNumbers(page.content, page.type)}
             </div>
           </div>
@@ -627,22 +627,22 @@ const RichTextarea = ({ id, value, onChange, placeholder, rows }) => {
 
         {page.type === 'notes' && (
           <div className="page-inner-notes">
-            {page.title && <div className="content-title">{page.title}</div>}
+            {page.title && <div className="content-title" contentEditable={!isExporting} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'title', e.target.innerText)}>{page.title}</div>}
             <div className="content-body notes-body" style={getFontSizeStyle(fontSize)} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
           </div>
         )}
 
         {page.type === 'imagetext' && (
           <div className="page-inner-imagetext">
-            {page.title && <div className="content-title">{page.title}</div>}
-            <div className="content-body" style={getFontSizeStyle(fontSize)} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
+            {page.title && <div className="content-title" contentEditable={!isExporting} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'title', e.target.innerText)}>{page.title}</div>}
+            <div className="content-body" style={getFontSizeStyle(fontSize)} contentEditable={!isExporting} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'content', e.target.innerText)} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
           </div>
         )}
 
         {page.type === 'backcover' && (
           <div className="page-inner-backcover">
-            <h1>{page.title}</h1>
-            <div className="content-body" style={getFontSizeStyle(fontSize)} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
+            <h1 contentEditable={!isExporting} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'title', e.target.innerText)}>{page.title}</h1>
+            <div className="content-body" style={getFontSizeStyle(fontSize)} contentEditable={!isExporting} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'content', e.target.innerText)} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
           </div>
         )}
 
@@ -915,8 +915,10 @@ function App() {
   };
 
   const handleDirectEdit = (pageId, field, value) => {
-    setPages(currPages => currPages.map(p => p.id === pageId ? { ...p, [field]: value } : p));
-    if (editingPageId === pageId) {
+    if (pageId) {
+      setPages(currPages => currPages.map(p => p.id === pageId ? { ...p, [field]: value } : p));
+    }
+    if (editingPageId === pageId || !pageId) {
       setDraftPage(prev => ({ ...prev, [field]: value }));
     }
   };
