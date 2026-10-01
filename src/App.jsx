@@ -104,6 +104,722 @@ const RichTextarea = ({ id, value, onChange, placeholder, rows }) => {
   );
 };
 
+
+  // Helper function to get font size style based on user selection
+  const getFontSizeStyle = (fontSize) => {
+    if (fontSize === 'micro') return { fontSize: '0.65rem' };
+    if (fontSize === 'tiny') return { fontSize: '0.75rem' };
+    if (fontSize === 'small') return { fontSize: '0.9rem' };
+    if (fontSize === 'large') return { fontSize: '1.4rem' };
+    return {};
+  };
+
+  // Helper to automatically wrap question numbers in .q-num and .mcq-question for beautiful styling
+  const parseQuestionNumbers = (text, type = 'content') => {
+    if (typeof text !== 'string') return text;
+    const lines = text.split('\n');
+    const elements = [];
+    
+    let inList1 = false;
+    let inList2 = false;
+    let inStatements = false;
+    let isMatchingQuestion = false;
+    
+    let list1Header = '';
+    let list2Header = '';
+    let list1Items = [];
+    let list2Items = [];
+    
+    let statementCounter = 1;
+    let list2Counter = 1;
+    let hasMainQuestion = false;
+
+    const flushLists = () => {
+      if (list1Items.length > 0 || list2Items.length > 0) {
+        elements.push(
+          <div key={`match-${elements.length}`} className="matching-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', margin: '15px 0' }}>
+            <div>
+              <div style={{ fontWeight: 'bold', marginBottom: '8px', borderBottom: '1px solid #c8a97e', paddingBottom: '4px', color: '#1a365d' }}>{list1Header || 'List I'}</div>
+              {list1Items.map((item, idx) => <div key={`l1-${idx}`} style={{ marginBottom: '6px' }}>{item}</div>)}
+            </div>
+            <div>
+              <div style={{ fontWeight: 'bold', marginBottom: '8px', borderBottom: '1px solid #c8a97e', paddingBottom: '4px', color: '#1a365d' }}>{list2Header || 'List II'}</div>
+              {list2Items.map((item, idx) => <div key={`l2-${idx}`} style={{ marginBottom: '6px' }}>{item}</div>)}
+            </div>
+          </div>
+        );
+        list1Items = [];
+        list2Items = [];
+        inList1 = false;
+        inList2 = false;
+      }
+    };
+
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i];
+      let trimmedLine = line.trim();
+      
+      if (!trimmedLine) {
+        // Handle empty lines and potential list flushing
+        if (inList2 && list2Items.length > 0 && i + 1 < lines.length && /^[A-D]\./.test(lines[i+1].trim())) {
+           flushLists();
+        } else if (inList2 && list2Items.length >= list1Items.length && list1Items.length > 0) {
+           flushLists();
+        }
+        
+        if (!inList1 && !inList2) {
+          elements.push(<br key={`br-${i}`} />);
+        }
+        continue;
+      }
+
+      if (/^List\s*[-–—]?\s*I\b/i.test(trimmedLine)) {
+        flushLists();
+        inList1 = true;
+        inList2 = false;
+        inStatements = false;
+        
+        // Check if the header contains both List I and List II (side-by-side format)
+        if (/^List\s*[-–—]?\s*I\s+List\s*[-–—]?\s*II/i.test(trimmedLine)) {
+           list1Header = 'List I';
+           list2Header = 'List II';
+        } else {
+           list1Header = trimmedLine;
+           list2Header = 'List II';
+        }
+        continue;
+      }
+      
+      if (/^List\s*[-–—]?\s*II\b/i.test(trimmedLine)) {
+        inList1 = false;
+        inList2 = true;
+        inStatements = false;
+        list2Header = trimmedLine;
+        list2Counter = 1;
+        continue;
+      }
+      
+      // Implicit Matching Question Detection (if missing headers)
+      if (isMatchingQuestion && !inList1 && !inList2 && /^[A-D]\.\s*[^A-Z-]/i.test(trimmedLine)) {
+         // It starts with A. but is not an option like A. A-3
+         if (!/^[A-D]\.\s*[A-Z]-/.test(trimmedLine)) {
+            inList1 = true;
+            list1Header = 'List I';
+            list2Header = 'List II';
+         }
+      }
+      
+      if (inList1) {
+        // Exit list 1 if we hit options or commands
+        if (/^[A-D]\.\s*[A-Z]-/.test(trimmedLine) || /^(Codes?:|Options?:|Select\s+|Exam:|Year:)/i.test(trimmedLine) || /^[A-D]\s+A-/.test(trimmedLine)) {
+           flushLists();
+           // Process normally below
+        } else if (isMatchingQuestion && !/^List\s*[-–—]?\s*I/i.test(list1Header)) {
+           // For implicit matching, transition to List 2 if it doesn't start with A-E.
+           if (!/^[A-E]\./i.test(trimmedLine)) {
+               inList1 = false;
+               inList2 = true;
+               list2Counter = 1;
+               // Fall through to inList2 processing
+           } else {
+               list1Items.push(trimmedLine);
+               continue;
+           }
+        } else {
+           // Check for side-by-side formatting like "A. Treaty   1. 1782"
+           let sideBySideMatch = trimmedLine.match(/^([A-D]\..+?)\s+(\d+[\.\)].+)$/);
+           if (sideBySideMatch) {
+              list1Items.push(sideBySideMatch[1].trim());
+              list2Items.push(sideBySideMatch[2].trim());
+           } else {
+              list1Items.push(trimmedLine);
+           }
+           continue;
+        }
+      }
+      
+      if (inList2) {
+        let match = trimmedLine.match(/^(\d+)[\.\)]\s*(.*)/);
+        if (match) {
+          list2Items.push(trimmedLine);
+          list2Counter = parseInt(match[1]) + 1;
+        } else {
+          // If it's the start of options, flush and process normally
+          if (/^[A-D]\.\s*[A-Z]-/.test(trimmedLine) || /^(Codes?:|Options?:|Select\s+)/i.test(trimmedLine) || /^[A-D]\s+A-/.test(trimmedLine)) {
+            flushLists();
+            // We do NOT continue here, so the line is processed normally outside the list
+          } else {
+            list2Items.push(`${list2Counter}. ${trimmedLine}`);
+            list2Counter++;
+            continue;
+          }
+        }
+      }
+
+      // Check for statement context
+      if (/(statements?:|consider the following:?|following pairs:?)/i.test(trimmedLine)) {
+        inStatements = true;
+        statementCounter = 1;
+      } else if (inStatements && /^[A-D]\./.test(trimmedLine)) {
+        inStatements = false;
+      } else if (inStatements && trimmedLine.match(/^(which of the|how many of|select the correct|codes?:)/i)) {
+        inStatements = false;
+      }
+
+      const qMatch = line.match(/^(\s*\d+[\.\)])(.*)/);
+      if (qMatch) {
+        // Check if the question text indicates a matching question
+        if (/(match the following|match list|match items)/i.test(qMatch[2])) {
+           isMatchingQuestion = true;
+        }
+        
+        // Determine if this is a main question or a sub-question (statement)
+        let isMainQuestion = false;
+        
+        if (!hasMainQuestion) {
+           isMainQuestion = true;
+        } else {
+           if (['exam', 'gridexam'].includes(type)) {
+              isMainQuestion = false;
+           } else {
+              if (!inStatements) {
+                 isMainQuestion = true;
+              }
+           }
+        }
+        
+        if (!isMainQuestion) {
+          elements.push(
+            <div key={`stmt-${i}`} style={{ paddingLeft: '20px', marginBottom: '8px' }}>
+              <span dangerouslySetInnerHTML={{ __html: line }} />
+            </div>
+          );
+        } else {
+          hasMainQuestion = true;
+          elements.push(
+            <div key={`q-${i}`} className="mcq-question">
+              <span className="q-num">{qMatch[1]}</span>
+              <span dangerouslySetInnerHTML={{ __html: qMatch[2] }} />
+            </div>
+          );
+        }
+        continue;
+      }
+      
+      // Check if normal text line indicates a matching question
+      if (/(match the following|match list|match items)/i.test(trimmedLine)) {
+         isMatchingQuestion = true;
+      }
+      
+      // Auto-number statements if they are missing numbers
+      if (inStatements) {
+         let match = trimmedLine.match(/^([IVX]+|\d+)[\.\)]\s*(.*)/i);
+         if (!match && !trimmedLine.match(/^(which of the|select the correct|codes?:)/i) && !/(statements?:|consider the following:?)/i.test(trimmedLine)) {
+            elements.push(
+              <div key={`stmt-add-${i}`} style={{ paddingLeft: '20px', marginBottom: '8px' }}>
+                <span dangerouslySetInnerHTML={{ __html: `${statementCounter}. ${line}` }} />
+              </div>
+            );
+            statementCounter++;
+            continue;
+         }
+      }
+
+      elements.push(
+        <React.Fragment key={`text-${i}`}>
+          <span dangerouslySetInnerHTML={{ __html: line }} />
+          {i < lines.length - 1 ? '\n' : ''}
+        </React.Fragment>
+      );
+    }
+    
+    flushLists();
+    
+    return elements;
+  };
+
+  // Helper component to render a page
+  const RenderPage = React.memo(({ 
+  page, index, isDraft = false, 
+  editingPageId, draftPageId, hasPages,
+  isExporting, zoom, pageSize, template, fontSize,
+  brandingName, brandingLink, brandingX, brandingY, brandingSize, isBrandingFree, isDragging,
+  stableHandlers
+}) => {
+  const { handleEditPage, handleDeletePage, handleDirectEdit, handleElementMouseDown } = stableHandlers;
+  return (
+    <div 
+      className={`page-wrapper ${!isDraft && editingPageId === page.id ? 'editing-active' : ''}`}
+      onClick={() => {
+        if (!isDraft) handleEditPage(page);
+      }}
+      onMouseEnter={() => {
+        if (!isDraft) handleEditPage(page);
+      }}
+      style={{ 
+        position: 'relative',
+        height: isExporting ? 'var(--page-height)' : `calc(var(--page-height) * ${zoom / 100})`,
+        width: isExporting ? 'var(--page-width)' : `calc(var(--page-width) * ${zoom / 100})`,
+        transition: 'width 0.2s, height 0.2s',
+        margin: '0 auto'
+      }}
+    >
+      {/* Remove button (only for added pages) */}
+      {!isDraft && !isExporting && (
+        <button 
+          onClick={(e) => { e.stopPropagation(); handleDeletePage(page.id); }}
+          className="btn-danger"
+          style={{ position: 'absolute', top: -15, right: -15, zIndex: 10, padding: 8, borderRadius: '50%' }}
+          title="Remove Page"
+        >
+          <Trash2 size={16} />
+        </button>
+      )}
+
+      {/* The actual page */}
+      <div 
+        className={`page-container page-size-${pageSize} template-${template} page-${page.type} ${!isDraft ? 'pdf-page-element page-clickable' : ''}`}
+        style={{ 
+          opacity: isDraft && hasPages ? 0.7 : 1, 
+          border: isDraft && hasPages ? '2px dashed var(--primary)' : 'none',
+          transform: isExporting ? 'none' : `scale(${zoom / 100})`,
+          transformOrigin: 'top left',
+          transition: 'transform 0.2s'
+        }}
+      >
+        {isDraft && hasPages && (
+          <div style={{ position: 'absolute', top: 10, left: 10, background: 'var(--primary)', color: 'white', padding: '4px 10px', borderRadius: 4, fontSize: '0.8rem', fontWeight: 'bold' }}>
+            DRAFT PREVIEW
+          </div>
+        )}
+        
+        {page.type === 'cover' && template === 'polity' ? (
+          <div className="page-inner-cover polity-cover">
+            <div 
+              className="polity-cover-top"
+              contentEditable={true} suppressContentEditableWarning={true}
+              onBlur={e => handleDirectEdit(page.id, 'polityTop', e.target.innerText)}
+            >
+              {page.polityTop || "A COMPREHENSIVE GUIDE TO"}
+            </div>
+            <h1>
+              <span 
+                className="title-part-1"
+                contentEditable={true} suppressContentEditableWarning={true}
+                onBlur={e => handleDirectEdit(page.id, 'polityTitle1', e.target.innerText)}
+              >
+                {page.polityTitle1 || (page.title || 'INDIAN POLITY').split(' ')[0]}
+              </span>
+              <br/>
+              <span 
+                className="title-part-2"
+                contentEditable={true} suppressContentEditableWarning={true}
+                onBlur={e => handleDirectEdit(page.id, 'polityTitle2', e.target.innerText)}
+              >
+                {page.polityTitle2 || (page.title || 'INDIAN POLITY').split(' ').slice(1).join(' ')}
+              </span>
+            </h1>
+            
+            {page.subtitle && (
+              <h2
+                contentEditable={true} suppressContentEditableWarning={true}
+                onBlur={e => handleDirectEdit(page.id, 'subtitle', e.target.innerText)}
+              >
+                {page.subtitle}
+              </h2>
+            )}
+            
+            <div className="polity-features">
+              <div className="feature-item">
+                <div className="feature-icon">📖</div>
+                <span contentEditable={true} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'polityF1', e.target.innerText)}>
+                  {page.polityF1 || "Conceptual Explanation"}
+                </span>
+              </div>
+              <div className="feature-item">
+                <div className="feature-icon">📝</div>
+                <span contentEditable={true} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'polityF2', e.target.innerText)}>
+                  {page.polityF2 || "PYQs Covered"}
+                </span>
+              </div>
+              <div className="feature-item">
+                <div className="feature-icon">💡</div>
+                <span contentEditable={true} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'polityF3', e.target.innerText)}>
+                  {page.polityF3 || "Exam-Oriented Notes"}
+                </span>
+              </div>
+              <div className="feature-item">
+                <div className="feature-icon">📊</div>
+                <span contentEditable={true} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'polityF4', e.target.innerText)}>
+                  {page.polityF4 || "Practice Questions"}
+                </span>
+              </div>
+            </div>
+
+            <div className="polity-illustration">
+              🏛️
+            </div>
+
+            <div className="polity-footer-ribbon">
+              <h3
+                contentEditable={true} suppressContentEditableWarning={true}
+                onBlur={e => handleDirectEdit(page.id, 'author', e.target.innerText)}
+              >
+                {page.author || '"A Strong Democracy Builds a Stronger India"'}
+              </h3>
+              <div 
+                className="polity-exams"
+                contentEditable={true} suppressContentEditableWarning={true}
+                onBlur={e => handleDirectEdit(page.id, 'polityExams', e.target.innerText)}
+              >
+                {page.polityExams || "UPSC CSE • State PCS • SSC • Railways"}
+              </div>
+            </div>
+          </div>
+        ) : page.type === 'cover' && (
+          <div className="page-inner-cover">
+            <h1>{page.title}</h1>
+            {page.subtitle && <h2>{page.subtitle}</h2>}
+            <h3>{page.author}</h3>
+          </div>
+        )}
+        
+        {page.type === 'copyright' && (
+          <div className="page-inner-copyright">
+            <h4>© {page.subtitle} {page.author}</h4>
+            <h5>Published by {page.title}</h5>
+            <div className="content-body" style={{ fontSize: fontSize === 'tiny' ? '0.7rem' : (fontSize === 'small' ? '0.8rem' : '0.9rem') }} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
+          </div>
+        )}
+
+        {page.type === 'preface' && (
+          <div className="page-inner-preface">
+            <h2 className="preface-title">{page.title || 'Preface'}</h2>
+            <div className="content-body" style={getFontSizeStyle(fontSize)} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
+          </div>
+        )}
+
+        {page.type === 'toc' && (
+          <div className="page-inner-toc">
+            <h2 className="toc-title">{page.title || 'Table of Contents'}</h2>
+            {page.content ? (
+              <div className="toc-list custom-toc" style={getFontSizeStyle(fontSize)}>
+                {page.content.split('\n').map((line, idx) => {
+                  if (!line.trim()) return null;
+                  
+                  let title = line.trim();
+                  let pageNum = '';
+                  
+                  // Try to match a trailing number preceded by dots, tabs, or multiple spaces
+                  let match = title.match(/^(.*?)(?:\.{2,}|\s{2,}|\t+|-{2,})\s*(\d+)$/);
+                  if (match) {
+                    title = match[1].trim();
+                    pageNum = match[2];
+                  } else {
+                    // Try to match a trailing number preceded by a single space, assuming it's a page number
+                    match = title.match(/^(.*?)\s+(\d+)$/);
+                    if (match) {
+                      title = match[1].trim();
+                      pageNum = match[2];
+                    }
+                  }
+                  
+                  // Strip any trailing dots/dashes
+                  title = title.replace(/[\.\-]+\s*$/, '');
+                  
+                  return (
+                    <div key={idx} className="toc-item">
+                      <span className="toc-chapter-title" dangerouslySetInnerHTML={{ __html: title }} />
+                      <span className="toc-dots"></span>
+                      <span className="toc-page-num">{pageNum}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : pages.some(p => p.type === 'chapter') ? (
+              <div className="toc-list">
+                {pages.map((p, i) => {
+                  if (p.type === 'chapter') {
+                    return (
+                      <div key={p.id} className="toc-item">
+                        <span className="toc-chapter-title">{p.subtitle ? `${p.subtitle}: ` : ''}{p.title || 'Untitled Chapter'}</span>
+                        <span className="toc-dots"></span>
+                        <span className="toc-page-num">{i + 1}</span>
+                      </div>
+                    );
+                  }
+                  return null;
+                })}
+              </div>
+            ) : (
+              <div className="content-body toc-body" style={getFontSizeStyle(fontSize)}>
+                Paste your syllabus or add Chapter pages to automatically generate the Table of Contents here.
+              </div>
+            )}
+          </div>
+        )}
+
+        {page.type === 'chapter' && (
+          <div className="page-inner-chapter">
+            {page.subtitle && <h3 className="chapter-number">{page.subtitle}</h3>}
+            <h1 className="chapter-title">{page.title}</h1>
+          </div>
+        )}
+
+        {page.type === 'content' && (
+          <div className="page-inner-content">
+            {page.title && <div className="content-title">{page.title}</div>}
+            <div className="content-body" style={getFontSizeStyle(fontSize)} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
+          </div>
+        )}
+
+        {page.type === 'twocolumn' && (
+          <div className="page-inner-twocolumn">
+            {page.title && <div className="content-title">{page.title}</div>}
+            <div className="content-body two-column" style={getFontSizeStyle(fontSize)} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
+          </div>
+        )}
+
+        {page.['exam', 'gridexam'].includes(type) && (
+          <div className="page-inner-exam">
+            {page.title && <div className="content-title">{page.title}</div>}
+            <div className="content-body exam-body" style={getFontSizeStyle(fontSize)}>
+              {(page.content || '').split(/(?=\n\s*\d+[\.\)])/).map((block, i) => {
+                if (!block.trim()) return null;
+                
+                // Split the block to find the "Answer:" section
+                const parts = block.trim().split(/(?=^Answer:|^Ans:|\nAnswer:|\nAns:)/i);
+
+                return (
+                  <div key={i} className="exam-block">
+                    {parts.map((part, pIdx) => {
+                      if (part.trim().toLowerCase().startsWith('answer:') || part.trim().toLowerCase().startsWith('ans:')) {
+                        return (
+                          <div key={pIdx} className="exam-answer-highlight" dangerouslySetInnerHTML={{ __html: part.trim() }} />
+                        );
+                      }
+                      return <span key={pIdx}>{parseQuestionNumbers(part, page.type)}</span>;
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {page.type === 'question' && (
+          <div className="page-inner-question">
+            {page.title && <div className="content-title">{page.title}</div>}
+            <div className="content-body question-body" style={getFontSizeStyle(fontSize)}>
+              {parseQuestionNumbers(page.content, page.type)}
+            </div>
+          </div>
+        )}
+
+        {page.type === 'mcq' && (
+          <div className="page-inner-mcq">
+            {page.title && <div className="content-title">{page.title}</div>}
+            <div className="content-body mcq-body" style={getFontSizeStyle(fontSize)}>
+              {parseQuestionNumbers(page.content, page.type)}
+            </div>
+          </div>
+        )}
+
+        {page.type === 'notes' && (
+          <div className="page-inner-notes">
+            {page.title && <div className="content-title">{page.title}</div>}
+            <div className="content-body notes-body" style={getFontSizeStyle(fontSize)} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
+          </div>
+        )}
+
+        {page.type === 'imagetext' && (
+          <div className="page-inner-imagetext">
+            {page.title && <div className="content-title">{page.title}</div>}
+            <div className="content-body" style={getFontSizeStyle(fontSize)} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
+          </div>
+        )}
+
+        {page.type === 'backcover' && (
+          <div className="page-inner-backcover">
+            <h1>{page.title}</h1>
+            <div className="content-body" style={getFontSizeStyle(fontSize)} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
+          </div>
+        )}
+
+        {page.type === 'pdfpage' && (
+          <div 
+            className="page-inner-pdfpage" 
+            style={{ 
+              position: 'relative',
+              width: '100%', 
+              height: '100%', 
+              margin: 0, 
+              padding: 0,
+              backgroundColor: 'white'
+            }}
+          >
+            <img 
+              src={page.backgroundImage} 
+              alt="PDF Page" 
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                objectFit: 'fill',
+                zIndex: 0,
+                pointerEvents: 'none'
+              }}
+              crossOrigin="anonymous"
+            />
+          </div>
+        )}
+
+        {/* Universal Floating Image rendered for ALL pages */}
+        {page.image && (
+          <div 
+            className="floating-element-container"
+            style={{ 
+              position: 'absolute', 
+              left: page.imageX || 50, 
+              top: page.imageY || 50, 
+              zIndex: 10
+            }}
+          >
+            <img 
+              src={page.image} 
+              alt="Page Visual" 
+              style={{ 
+                cursor: 'grab',
+                width: page.imageWidth ? `${page.imageWidth}px` : 'auto',
+                maxWidth: page.imageWidth ? 'none' : '80%',
+                objectFit: 'contain'
+              }}
+              onMouseDown={(e) => handleElementMouseDown(e, page.id || draftPageId, 'image')}
+              onDragStart={(e) => e.preventDefault()}
+            />
+            {!isExporting && (
+              <div 
+                className="resize-handle"
+                onMouseDown={(e) => handleElementMouseDown(e, page.id || draftPageId, 'image-resize')}
+              />
+            )}
+          </div>
+        )}
+
+        {/* Universal Floating Text rendered for ALL pages */}
+        {(page.floatingTexts || []).map((ft) => (
+          <div 
+            key={ft.id}
+            className="floating-element-container"
+            style={{ 
+              position: 'absolute', 
+              left: ft.x || 50, 
+              top: ft.y || 150, 
+              zIndex: 11
+            }}
+          >
+            <div 
+              style={{ 
+                cursor: 'grab',
+                fontFamily: 'Inter, sans-serif',
+                fontSize: ft.size ? `${ft.size}px` : (fontSize === 'small' ? '0.9rem' : (fontSize === 'medium' ? '1.1rem' : '1.4rem')),
+                color: '#1a365d',
+                fontWeight: 600,
+                whiteSpace: 'pre-wrap',
+                background: 'rgba(255, 255, 255, 0.7)',
+                padding: '4px 8px',
+                borderRadius: '4px',
+                border: '1px dashed transparent',
+                transition: 'border 0.2s'
+              }}
+              onMouseDown={(e) => handleElementMouseDown(e, page.id || draftPageId, 'text', ft.id)}
+              onMouseOver={(e) => e.target.style.border = '1px dashed #6366f1'}
+              onMouseOut={(e) => e.target.style.border = '1px dashed transparent'}
+            >
+              {ft.text}
+            </div>
+            {!isExporting && (
+              <div 
+                className="resize-handle"
+                onMouseDown={(e) => handleElementMouseDown(e, page.id || draftPageId, 'text-resize', ft.id)}
+              />
+            )}
+          </div>
+        ))}
+
+        {/* Footer Area (Page Number Only) */}
+        {page.type !== 'pdfpage' && (
+          <div style={{ position: 'absolute', bottom: '30px', right: '40px', fontSize: '0.9rem', fontWeight: 500, color: '#666', fontFamily: 'inherit' }}>
+            {index + 1}
+          </div>
+        )}
+
+        {/* Global Branding Fixed at Bottom Center */}
+        {brandingName && (
+          <div 
+            className="floating-element-container"
+            style={{
+              position: 'absolute',
+              left: isBrandingFree ? (page.brandingX ?? brandingX) : '50%',
+              top: isBrandingFree ? (page.brandingY ?? brandingY) : 'auto',
+              bottom: isBrandingFree ? 'auto' : '30px',
+              transform: isBrandingFree ? 'none' : 'translateX(-50%)',
+              zIndex: 20
+            }}
+          >
+            <div
+              style={{
+                fontSize: isBrandingFree ? `${page.brandingSize ?? brandingSize}px` : '1rem',
+                fontWeight: 800,
+                color: '#2563eb',
+                fontFamily: 'inherit',
+                textAlign: 'center',
+                padding: '6px 12px',
+                border: '1px solid #e5e7eb',
+                boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                pointerEvents: 'auto',
+                background: '#ffffff',
+                borderRadius: '6px',
+                cursor: isBrandingFree ? 'grab' : 'default',
+              }}
+              onMouseDown={(e) => {
+                if (isBrandingFree) {
+                  handleElementMouseDown(e, page.id || draftPageId, 'branding');
+                }
+              }}
+              onDragStart={(e) => e.preventDefault()}
+            >
+              {brandingLink ? (
+                <a 
+                  className="branding-link"
+                  href={brandingLink.startsWith('http') ? brandingLink : `https://${brandingLink}`} 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  style={{ color: '#2563eb', textDecoration: 'underline', cursor: 'pointer', fontWeight: 800 }}
+                  onDragStart={(e) => e.preventDefault()}
+                  onClick={(e) => { if(isBrandingFree && isDragging) e.preventDefault(); }}
+                >
+                  {brandingName}
+                </a>
+              ) : (
+                <span style={{ fontWeight: 800, color: '#1f2937' }}>{brandingName}</span>
+              )}
+            </div>
+            {!isExporting && isBrandingFree && (
+              <div 
+                className="resize-handle"
+                onMouseDown={(e) => handleElementMouseDown(e, page.id || draftPageId, 'branding-resize')}
+              />
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
+
 function App() {
   const getSavedState = (key, defaultValue) => {
     try {
@@ -117,14 +833,14 @@ function App() {
 
   const initialDraftPage = {
     type: 'cover',
-    title: 'The Enchanted Forest',
-    subtitle: 'A Tale of Magic and Mystery',
-    author: 'Jane Austen',
-    content: 'The cold winds howled through the ancient trees, their branches twisting like skeletal fingers against the twilight sky. Elara pulled her cloak tighter, her heart pounding a steady rhythm against her ribs.\n\nShe had been warned about the Whispering Woods, but the map in her trembling hands left no room for doubt. The artifact lay hidden somewhere in its depths.',
+    title: 'Indian Polity Exam',
+    subtitle: 'Mock Test Series 2024',
+    author: 'UPSC Prep',
+    content: 'This mock test covers fundamental rights, duties, directive principles, and the structure of the Parliament. Ensure you read all questions carefully before answering.',
     image: ''
   };
 
-  const [template, setTemplate] = useState(() => getSavedState('bookforge_template', 'classic'));
+  const [template, setTemplate] = useState(() => getSavedState('bookforge_template', 'polity'));
   const [isExporting, setIsExporting] = useState(false);
   const [fontSize, setFontSize] = useState(() => getSavedState('bookforge_fontSize', 'medium'));
   const [pageSize, setPageSize] = useState(() => getSavedState('bookforge_pageSize', 'a4'));
@@ -186,12 +902,9 @@ function App() {
     { id: 'content', label: 'Normal Content Page' },
     { id: 'twocolumn', label: 'Two-Column Page' },
     { id: 'exam', label: 'Two-Column Exam / MCQ' },
-    { id: 'question', label: 'Question Bank Page' },
+    { id: 'gridexam', label: 'Premium Grid Exam' },
     { id: 'mcq', label: 'MCQ Page' },
-    { id: 'notes', label: 'Notes Page' },
-    { id: 'imagetext', label: 'Image + Text Page' },
     { id: 'pdfpage', label: 'Imported PDF Page' },
-    { id: 'backcover', label: 'Back Cover' },
   ];
 
   const handleUpdateDraft = (field, value) => {
@@ -222,13 +935,13 @@ function App() {
       
       let breakPoint = -1;
       
-      if (['exam', 'question', 'mcq'].includes(type)) {
+      if (['exam', 'mcq'].includes(type)) {
         const regex = /\n\s*\d+[\.\)]/g;
         let match;
         let qCount = 1;
         while ((match = regex.exec(textToProcess)) !== null) {
           qCount++;
-          const MAX_Q = type === 'exam' ? 6 : 4;
+          const MAX_Q = ['exam', 'gridexam'].includes(type) ? 6 : 4;
           
           if (qCount > MAX_Q) {
             breakPoint = match.index;
@@ -305,23 +1018,23 @@ function App() {
       let MAX_CHARS = charsPerPageMap[fontSize] * sizeMultiplierMap[pageSize]; 
       let MAX_LINES = linesPerPageMap[fontSize] * sizeMultiplierMap[pageSize];
       
-      if (draftPage.type === 'exam') {
+      if (['exam', 'gridexam'].includes(draftPage.type)) {
         MAX_CHARS *= 0.28;
         MAX_LINES *= 2; // Two columns can hold twice the lines
       } else if (draftPage.type === 'twocolumn') {
         MAX_CHARS *= 0.55;
         MAX_LINES *= 2;
-      } else if (['question', 'mcq'].includes(draftPage.type)) {
+      } else if (['mcq'].includes(draftPage.type)) {
         MAX_CHARS *= 0.45;
         // Lines remain the same for single column, but chars are heavily restricted
       }
       
-      const paginatableTypes = ['content', 'twocolumn', 'exam', 'question', 'mcq', 'preface', 'imagetext', 'notes', 'toc'];
+      const paginatableTypes = ['content', 'twocolumn', 'exam', 'gridexam', 'mcq', 'preface', 'toc'];
 
       if (paginatableTypes.includes(draftPage.type) && draftPage.content) {
          const rawCurrentLines = draftPage.content.split('\n').length;
          const currentQuestionCount = (draftPage.content.match(/\n\s*\d+[\.\)]/g) || []).length + 1;
-         const MAX_Q = draftPage.type === 'exam' ? 6 : (['question', 'mcq'].includes(draftPage.type) ? 4 : 999);
+         const MAX_Q = ['exam', 'gridexam'].includes(draftPage.type) ? 6 : (['mcq'].includes(draftPage.type) ? 4 : 999);
          const currentLines = rawCurrentLines + (currentQuestionCount * 8);
          const isTocOverflow = draftPage.type === 'toc' && rawCurrentLines > Math.max(10, Math.floor(MAX_LINES * 0.7));
          
@@ -363,16 +1076,16 @@ function App() {
     let MAX_CHARS = charsPerPageMap[fontSize] * sizeMultiplierMap[pageSize]; 
     let MAX_LINES = linesPerPageMap[fontSize] * sizeMultiplierMap[pageSize];
     
-    if (draftPage.type === 'exam') { MAX_CHARS *= 0.28; MAX_LINES *= 2; }
+    if (['exam', 'gridexam'].includes(draftPage.type)) { MAX_CHARS *= 0.28; MAX_LINES *= 2; }
     else if (draftPage.type === 'twocolumn') { MAX_CHARS *= 0.55; MAX_LINES *= 2; }
-    else if (['question', 'mcq'].includes(draftPage.type)) { MAX_CHARS *= 0.45; }
+    else if (['mcq'].includes(draftPage.type)) { MAX_CHARS *= 0.45; }
 
-    const paginatableTypes = ['content', 'twocolumn', 'exam', 'question', 'mcq', 'preface', 'imagetext', 'notes', 'toc'];
+    const paginatableTypes = ['content', 'twocolumn', 'exam', 'gridexam', 'mcq', 'preface', 'toc'];
     let newPagesToAdd = [];
 
     const rawCurrentLines = draftPage.content ? draftPage.content.split('\n').length : 0;
     const currentQuestionCount = draftPage.content ? (draftPage.content.match(/\n\s*\d+[\.\)]/g) || []).length + 1 : 0;
-    const MAX_Q = draftPage.type === 'exam' ? 6 : (['question', 'mcq'].includes(draftPage.type) ? 4 : 999);
+    const MAX_Q = ['exam', 'gridexam'].includes(draftPage.type) ? 6 : (['mcq'].includes(draftPage.type) ? 4 : 999);
     const currentLines = rawCurrentLines + (currentQuestionCount * 8);
     const isTocOverflow = draftPage.type === 'toc' && rawCurrentLines > Math.max(10, Math.floor(MAX_LINES * 0.7));
     
@@ -406,6 +1119,14 @@ function App() {
 
   const handleDeletePage = (id) => {
     setPages(prev => prev.filter(p => p.id !== id));
+  };
+
+  const handleDeleteAllPages = () => {
+    if (window.confirm("Are you sure you want to delete all pages? This action cannot be undone.")) {
+      setPages([]);
+      setEditingPageId(null);
+      setDraftPage({ type: 'content', title: '', content: '' });
+    }
   };
 
   const handleDownloadPDF = async () => {
@@ -835,711 +1556,24 @@ function App() {
     setDraftPage({ ...page });
   };
 
-  // Helper to automatically wrap question numbers in .q-num and .mcq-question for beautiful styling
-  const parseQuestionNumbers = (text, type = 'content') => {
-    if (typeof text !== 'string') return text;
-    const lines = text.split('\n');
-    const elements = [];
-    
-    let inList1 = false;
-    let inList2 = false;
-    let inStatements = false;
-    let isMatchingQuestion = false;
-    
-    let list1Header = '';
-    let list2Header = '';
-    let list1Items = [];
-    let list2Items = [];
-    
-    let statementCounter = 1;
-    let list2Counter = 1;
-    let hasMainQuestion = false;
 
-    const flushLists = () => {
-      if (list1Items.length > 0 || list2Items.length > 0) {
-        elements.push(
-          <div key={`match-${elements.length}`} className="matching-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', margin: '15px 0' }}>
-            <div>
-              <div style={{ fontWeight: 'bold', marginBottom: '8px', borderBottom: '1px solid #c8a97e', paddingBottom: '4px', color: '#1a365d' }}>{list1Header || 'List I'}</div>
-              {list1Items.map((item, idx) => <div key={`l1-${idx}`} style={{ marginBottom: '6px' }}>{item}</div>)}
-            </div>
-            <div>
-              <div style={{ fontWeight: 'bold', marginBottom: '8px', borderBottom: '1px solid #c8a97e', paddingBottom: '4px', color: '#1a365d' }}>{list2Header || 'List II'}</div>
-              {list2Items.map((item, idx) => <div key={`l2-${idx}`} style={{ marginBottom: '6px' }}>{item}</div>)}
-            </div>
-          </div>
-        );
-        list1Items = [];
-        list2Items = [];
-        inList1 = false;
-        inList2 = false;
-      }
-    };
 
-    for (let i = 0; i < lines.length; i++) {
-      let line = lines[i];
-      let trimmedLine = line.trim();
-      
-      if (!trimmedLine) {
-        // Handle empty lines and potential list flushing
-        if (inList2 && list2Items.length > 0 && i + 1 < lines.length && /^[A-D]\./.test(lines[i+1].trim())) {
-           flushLists();
-        } else if (inList2 && list2Items.length >= list1Items.length && list1Items.length > 0) {
-           flushLists();
-        }
-        
-        if (!inList1 && !inList2) {
-          elements.push(<br key={`br-${i}`} />);
-        }
-        continue;
-      }
 
-      if (/^List\s*[-–—]?\s*I\b/i.test(trimmedLine)) {
-        flushLists();
-        inList1 = true;
-        inList2 = false;
-        inStatements = false;
-        
-        // Check if the header contains both List I and List II (side-by-side format)
-        if (/^List\s*[-–—]?\s*I\s+List\s*[-–—]?\s*II/i.test(trimmedLine)) {
-           list1Header = 'List I';
-           list2Header = 'List II';
-        } else {
-           list1Header = trimmedLine;
-           list2Header = 'List II';
-        }
-        continue;
-      }
-      
-      if (/^List\s*[-–—]?\s*II\b/i.test(trimmedLine)) {
-        inList1 = false;
-        inList2 = true;
-        inStatements = false;
-        list2Header = trimmedLine;
-        list2Counter = 1;
-        continue;
-      }
-      
-      // Implicit Matching Question Detection (if missing headers)
-      if (isMatchingQuestion && !inList1 && !inList2 && /^[A-D]\.\s*[^A-Z-]/i.test(trimmedLine)) {
-         // It starts with A. but is not an option like A. A-3
-         if (!/^[A-D]\.\s*[A-Z]-/.test(trimmedLine)) {
-            inList1 = true;
-            list1Header = 'List I';
-            list2Header = 'List II';
-         }
-      }
-      
-      if (inList1) {
-        // Exit list 1 if we hit options or commands
-        if (/^[A-D]\.\s*[A-Z]-/.test(trimmedLine) || /^(Codes?:|Options?:|Select\s+|Exam:|Year:)/i.test(trimmedLine) || /^[A-D]\s+A-/.test(trimmedLine)) {
-           flushLists();
-           // Process normally below
-        } else if (isMatchingQuestion && !/^List\s*[-–—]?\s*I/i.test(list1Header)) {
-           // For implicit matching, transition to List 2 if it doesn't start with A-E.
-           if (!/^[A-E]\./i.test(trimmedLine)) {
-               inList1 = false;
-               inList2 = true;
-               list2Counter = 1;
-               // Fall through to inList2 processing
-           } else {
-               list1Items.push(trimmedLine);
-               continue;
-           }
-        } else {
-           // Check for side-by-side formatting like "A. Treaty   1. 1782"
-           let sideBySideMatch = trimmedLine.match(/^([A-D]\..+?)\s+(\d+[\.\)].+)$/);
-           if (sideBySideMatch) {
-              list1Items.push(sideBySideMatch[1].trim());
-              list2Items.push(sideBySideMatch[2].trim());
-           } else {
-              list1Items.push(trimmedLine);
-           }
-           continue;
-        }
-      }
-      
-      if (inList2) {
-        let match = trimmedLine.match(/^(\d+)[\.\)]\s*(.*)/);
-        if (match) {
-          list2Items.push(trimmedLine);
-          list2Counter = parseInt(match[1]) + 1;
-        } else {
-          // If it's the start of options, flush and process normally
-          if (/^[A-D]\.\s*[A-Z]-/.test(trimmedLine) || /^(Codes?:|Options?:|Select\s+)/i.test(trimmedLine) || /^[A-D]\s+A-/.test(trimmedLine)) {
-            flushLists();
-            // We do NOT continue here, so the line is processed normally outside the list
-          } else {
-            list2Items.push(`${list2Counter}. ${trimmedLine}`);
-            list2Counter++;
-            continue;
-          }
-        }
-      }
-
-      // Check for statement context
-      if (/(statements?:|consider the following:?|following pairs:?)/i.test(trimmedLine)) {
-        inStatements = true;
-        statementCounter = 1;
-      } else if (inStatements && /^[A-D]\./.test(trimmedLine)) {
-        inStatements = false;
-      } else if (inStatements && trimmedLine.match(/^(which of the|how many of|select the correct|codes?:)/i)) {
-        inStatements = false;
-      }
-
-      const qMatch = line.match(/^(\s*\d+[\.\)])(.*)/);
-      if (qMatch) {
-        // Check if the question text indicates a matching question
-        if (/(match the following|match list|match items)/i.test(qMatch[2])) {
-           isMatchingQuestion = true;
-        }
-        
-        // Determine if this is a main question or a sub-question (statement)
-        let isMainQuestion = false;
-        
-        if (!hasMainQuestion) {
-           isMainQuestion = true;
-        } else {
-           if (type === 'exam') {
-              isMainQuestion = false;
-           } else {
-              if (!inStatements) {
-                 isMainQuestion = true;
-              }
-           }
-        }
-        
-        if (!isMainQuestion) {
-          elements.push(
-            <div key={`stmt-${i}`} style={{ paddingLeft: '20px', marginBottom: '8px' }}>
-              <span dangerouslySetInnerHTML={{ __html: line }} />
-            </div>
-          );
-        } else {
-          hasMainQuestion = true;
-          elements.push(
-            <div key={`q-${i}`} className="mcq-question">
-              <span className="q-num">{qMatch[1]}</span>
-              <span dangerouslySetInnerHTML={{ __html: qMatch[2] }} />
-            </div>
-          );
-        }
-        continue;
-      }
-      
-      // Check if normal text line indicates a matching question
-      if (/(match the following|match list|match items)/i.test(trimmedLine)) {
-         isMatchingQuestion = true;
-      }
-      
-      // Auto-number statements if they are missing numbers
-      if (inStatements) {
-         let match = trimmedLine.match(/^([IVX]+|\d+)[\.\)]\s*(.*)/i);
-         if (!match && !trimmedLine.match(/^(which of the|select the correct|codes?:)/i) && !/(statements?:|consider the following:?)/i.test(trimmedLine)) {
-            elements.push(
-              <div key={`stmt-add-${i}`} style={{ paddingLeft: '20px', marginBottom: '8px' }}>
-                <span dangerouslySetInnerHTML={{ __html: `${statementCounter}. ${line}` }} />
-              </div>
-            );
-            statementCounter++;
-            continue;
-         }
-      }
-
-      elements.push(
-        <React.Fragment key={`text-${i}`}>
-          <span dangerouslySetInnerHTML={{ __html: line }} />
-          {i < lines.length - 1 ? '\n' : ''}
-        </React.Fragment>
-      );
-    }
-    
-    flushLists();
-    
-    return elements;
-  };
-
-  // Helper function to get font size style based on user selection
-  const getFontSizeStyle = () => {
-    if (fontSize === 'micro') return { fontSize: '0.65rem' };
-    if (fontSize === 'tiny') return { fontSize: '0.75rem' };
-    if (fontSize === 'small') return { fontSize: '0.9rem' };
-    if (fontSize === 'large') return { fontSize: '1.4rem' };
-    return {};
-  };
-
-  // Helper component to render a page
-  const RenderPage = ({ page, index, isDraft = false }) => (
-    <div 
-      className={`page-wrapper ${!isDraft && editingPageId === page.id ? 'editing-active' : ''}`}
-      onClick={() => {
-        if (!isDraft) handleEditPage(page);
-      }}
-      onMouseEnter={() => {
-        if (!isDraft) handleEditPage(page);
-      }}
-      style={{ 
-        position: 'relative',
-        height: isExporting ? 'var(--page-height)' : `calc(var(--page-height) * ${zoom / 100})`,
-        width: isExporting ? 'var(--page-width)' : `calc(var(--page-width) * ${zoom / 100})`,
-        transition: 'width 0.2s, height 0.2s',
-        margin: '0 auto'
-      }}
-    >
-      {/* Remove button (only for added pages) */}
-      {!isDraft && !isExporting && (
-        <button 
-          onClick={(e) => { e.stopPropagation(); handleDeletePage(page.id); }}
-          className="btn-danger"
-          style={{ position: 'absolute', top: -15, right: -15, zIndex: 10, padding: 8, borderRadius: '50%' }}
-          title="Remove Page"
-        >
-          <Trash2 size={16} />
-        </button>
-      )}
-
-      {/* The actual page */}
-      <div 
-        className={`page-container page-size-${pageSize} template-${template} page-${page.type} ${!isDraft ? 'pdf-page-element page-clickable' : ''}`}
-        style={{ 
-          opacity: isDraft && pages.length > 0 ? 0.7 : 1, 
-          border: isDraft && pages.length > 0 ? '2px dashed var(--primary)' : 'none',
-          transform: isExporting ? 'none' : `scale(${zoom / 100})`,
-          transformOrigin: 'top left',
-          transition: 'transform 0.2s'
-        }}
-      >
-        {isDraft && pages.length > 0 && (
-          <div style={{ position: 'absolute', top: 10, left: 10, background: 'var(--primary)', color: 'white', padding: '4px 10px', borderRadius: 4, fontSize: '0.8rem', fontWeight: 'bold' }}>
-            DRAFT PREVIEW
-          </div>
-        )}
-        
-        {page.type === 'cover' && template === 'polity' ? (
-          <div className="page-inner-cover polity-cover">
-            <div 
-              className="polity-cover-top"
-              contentEditable={true} suppressContentEditableWarning={true}
-              onBlur={e => handleDirectEdit(page.id, 'polityTop', e.target.innerText)}
-            >
-              {page.polityTop || "A COMPREHENSIVE GUIDE TO"}
-            </div>
-            <h1>
-              <span 
-                className="title-part-1"
-                contentEditable={true} suppressContentEditableWarning={true}
-                onBlur={e => handleDirectEdit(page.id, 'polityTitle1', e.target.innerText)}
-              >
-                {page.polityTitle1 || (page.title || 'INDIAN POLITY').split(' ')[0]}
-              </span>
-              <br/>
-              <span 
-                className="title-part-2"
-                contentEditable={true} suppressContentEditableWarning={true}
-                onBlur={e => handleDirectEdit(page.id, 'polityTitle2', e.target.innerText)}
-              >
-                {page.polityTitle2 || (page.title || 'INDIAN POLITY').split(' ').slice(1).join(' ')}
-              </span>
-            </h1>
-            
-            {page.subtitle && (
-              <h2
-                contentEditable={true} suppressContentEditableWarning={true}
-                onBlur={e => handleDirectEdit(page.id, 'subtitle', e.target.innerText)}
-              >
-                {page.subtitle}
-              </h2>
-            )}
-            
-            <div className="polity-features">
-              <div className="feature-item">
-                <div className="feature-icon">📖</div>
-                <span contentEditable={true} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'polityF1', e.target.innerText)}>
-                  {page.polityF1 || "Conceptual Explanation"}
-                </span>
-              </div>
-              <div className="feature-item">
-                <div className="feature-icon">📝</div>
-                <span contentEditable={true} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'polityF2', e.target.innerText)}>
-                  {page.polityF2 || "PYQs Covered"}
-                </span>
-              </div>
-              <div className="feature-item">
-                <div className="feature-icon">💡</div>
-                <span contentEditable={true} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'polityF3', e.target.innerText)}>
-                  {page.polityF3 || "Exam-Oriented Notes"}
-                </span>
-              </div>
-              <div className="feature-item">
-                <div className="feature-icon">📊</div>
-                <span contentEditable={true} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'polityF4', e.target.innerText)}>
-                  {page.polityF4 || "Practice Questions"}
-                </span>
-              </div>
-            </div>
-
-            <div className="polity-illustration">
-              🏛️
-            </div>
-
-            <div className="polity-footer-ribbon">
-              <h3
-                contentEditable={true} suppressContentEditableWarning={true}
-                onBlur={e => handleDirectEdit(page.id, 'author', e.target.innerText)}
-              >
-                {page.author || '"A Strong Democracy Builds a Stronger India"'}
-              </h3>
-              <div 
-                className="polity-exams"
-                contentEditable={true} suppressContentEditableWarning={true}
-                onBlur={e => handleDirectEdit(page.id, 'polityExams', e.target.innerText)}
-              >
-                {page.polityExams || "UPSC CSE • State PCS • SSC • Railways"}
-              </div>
-            </div>
-          </div>
-        ) : page.type === 'cover' && (
-          <div className="page-inner-cover">
-            <h1>{page.title}</h1>
-            {page.subtitle && <h2>{page.subtitle}</h2>}
-            <h3>{page.author}</h3>
-          </div>
-        )}
-        
-        {page.type === 'copyright' && (
-          <div className="page-inner-copyright">
-            <h4>© {page.subtitle} {page.author}</h4>
-            <h5>Published by {page.title}</h5>
-            <div className="content-body" style={{ fontSize: fontSize === 'tiny' ? '0.7rem' : (fontSize === 'small' ? '0.8rem' : '0.9rem') }} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
-          </div>
-        )}
-
-        {page.type === 'preface' && (
-          <div className="page-inner-preface">
-            <h2 className="preface-title">{page.title || 'Preface'}</h2>
-            <div className="content-body" style={getFontSizeStyle()} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
-          </div>
-        )}
-
-        {page.type === 'toc' && (
-          <div className="page-inner-toc">
-            <h2 className="toc-title">{page.title || 'Table of Contents'}</h2>
-            {page.content ? (
-              <div className="toc-list custom-toc" style={getFontSizeStyle()}>
-                {page.content.split('\n').map((line, idx) => {
-                  if (!line.trim()) return null;
-                  
-                  let title = line.trim();
-                  let pageNum = '';
-                  
-                  // Try to match a trailing number preceded by dots, tabs, or multiple spaces
-                  let match = title.match(/^(.*?)(?:\.{2,}|\s{2,}|\t+|-{2,})\s*(\d+)$/);
-                  if (match) {
-                    title = match[1].trim();
-                    pageNum = match[2];
-                  } else {
-                    // Try to match a trailing number preceded by a single space, assuming it's a page number
-                    match = title.match(/^(.*?)\s+(\d+)$/);
-                    if (match) {
-                      title = match[1].trim();
-                      pageNum = match[2];
-                    }
-                  }
-                  
-                  // Strip any trailing dots/dashes
-                  title = title.replace(/[\.\-]+\s*$/, '');
-                  
-                  return (
-                    <div key={idx} className="toc-item">
-                      <span className="toc-chapter-title" dangerouslySetInnerHTML={{ __html: title }} />
-                      <span className="toc-dots"></span>
-                      <span className="toc-page-num">{pageNum}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : pages.some(p => p.type === 'chapter') ? (
-              <div className="toc-list">
-                {pages.map((p, i) => {
-                  if (p.type === 'chapter') {
-                    return (
-                      <div key={p.id} className="toc-item">
-                        <span className="toc-chapter-title">{p.subtitle ? `${p.subtitle}: ` : ''}{p.title || 'Untitled Chapter'}</span>
-                        <span className="toc-dots"></span>
-                        <span className="toc-page-num">{i + 1}</span>
-                      </div>
-                    );
-                  }
-                  return null;
-                })}
-              </div>
-            ) : (
-              <div className="content-body toc-body" style={getFontSizeStyle()}>
-                Paste your syllabus or add Chapter pages to automatically generate the Table of Contents here.
-              </div>
-            )}
-          </div>
-        )}
-
-        {page.type === 'chapter' && (
-          <div className="page-inner-chapter">
-            {page.subtitle && <h3 className="chapter-number">{page.subtitle}</h3>}
-            <h1 className="chapter-title">{page.title}</h1>
-          </div>
-        )}
-
-        {page.type === 'content' && (
-          <div className="page-inner-content">
-            {page.title && <div className="content-title">{page.title}</div>}
-            <div className="content-body" style={getFontSizeStyle()} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
-          </div>
-        )}
-
-        {page.type === 'twocolumn' && (
-          <div className="page-inner-twocolumn">
-            {page.title && <div className="content-title">{page.title}</div>}
-            <div className="content-body two-column" style={getFontSizeStyle()} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
-          </div>
-        )}
-
-        {page.type === 'exam' && (
-          <div className="page-inner-exam">
-            {page.title && <div className="content-title">{page.title}</div>}
-            <div className="content-body exam-body" style={getFontSizeStyle()}>
-              {(page.content || '').split(/(?=\n\s*\d+[\.\)])/).map((block, i) => {
-                if (!block.trim()) return null;
-                
-                // Split the block to find the "Answer:" section
-                const parts = block.trim().split(/(?=^Answer:|^Ans:|\nAnswer:|\nAns:)/i);
-
-                return (
-                  <div key={i} className="exam-block">
-                    {parts.map((part, pIdx) => {
-                      if (part.trim().toLowerCase().startsWith('answer:') || part.trim().toLowerCase().startsWith('ans:')) {
-                        return (
-                          <div key={pIdx} className="exam-answer-highlight" dangerouslySetInnerHTML={{ __html: part.trim() }} />
-                        );
-                      }
-                      return <span key={pIdx}>{parseQuestionNumbers(part, page.type)}</span>;
-                    })}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {page.type === 'question' && (
-          <div className="page-inner-question">
-            {page.title && <div className="content-title">{page.title}</div>}
-            <div className="content-body question-body" style={getFontSizeStyle()}>
-              {parseQuestionNumbers(page.content, page.type)}
-            </div>
-          </div>
-        )}
-
-        {page.type === 'mcq' && (
-          <div className="page-inner-mcq">
-            {page.title && <div className="content-title">{page.title}</div>}
-            <div className="content-body mcq-body" style={getFontSizeStyle()}>
-              {parseQuestionNumbers(page.content, page.type)}
-            </div>
-          </div>
-        )}
-
-        {page.type === 'notes' && (
-          <div className="page-inner-notes">
-            {page.title && <div className="content-title">{page.title}</div>}
-            <div className="content-body notes-body" style={getFontSizeStyle()} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
-          </div>
-        )}
-
-        {page.type === 'imagetext' && (
-          <div className="page-inner-imagetext">
-            {page.title && <div className="content-title">{page.title}</div>}
-            <div className="content-body" style={getFontSizeStyle()} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
-          </div>
-        )}
-
-        {page.type === 'backcover' && (
-          <div className="page-inner-backcover">
-            <h1>{page.title}</h1>
-            <div className="content-body" style={getFontSizeStyle()} dangerouslySetInnerHTML={{ __html: page.content || '' }} />
-          </div>
-        )}
-
-        {page.type === 'pdfpage' && (
-          <div 
-            className="page-inner-pdfpage" 
-            style={{ 
-              position: 'relative',
-              width: '100%', 
-              height: '100%', 
-              margin: 0, 
-              padding: 0,
-              backgroundColor: 'white'
-            }}
-          >
-            <img 
-              src={page.backgroundImage} 
-              alt="PDF Page" 
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                objectFit: 'fill',
-                zIndex: 0,
-                pointerEvents: 'none'
-              }}
-              crossOrigin="anonymous"
-            />
-          </div>
-        )}
-
-        {/* Universal Floating Image rendered for ALL pages */}
-        {page.image && (
-          <div 
-            className="floating-element-container"
-            style={{ 
-              position: 'absolute', 
-              left: page.imageX || 50, 
-              top: page.imageY || 50, 
-              zIndex: 10
-            }}
-          >
-            <img 
-              src={page.image} 
-              alt="Page Visual" 
-              style={{ 
-                cursor: 'grab',
-                width: page.imageWidth ? `${page.imageWidth}px` : 'auto',
-                maxWidth: page.imageWidth ? 'none' : '80%',
-                objectFit: 'contain'
-              }}
-              onMouseDown={(e) => handleElementMouseDown(e, page.id || draftPage.id, 'image')}
-              onDragStart={(e) => e.preventDefault()}
-            />
-            {!isExporting && (
-              <div 
-                className="resize-handle"
-                onMouseDown={(e) => handleElementMouseDown(e, page.id || draftPage.id, 'image-resize')}
-              />
-            )}
-          </div>
-        )}
-
-        {/* Universal Floating Text rendered for ALL pages */}
-        {(page.floatingTexts || []).map((ft) => (
-          <div 
-            key={ft.id}
-            className="floating-element-container"
-            style={{ 
-              position: 'absolute', 
-              left: ft.x || 50, 
-              top: ft.y || 150, 
-              zIndex: 11
-            }}
-          >
-            <div 
-              style={{ 
-                cursor: 'grab',
-                fontFamily: 'Inter, sans-serif',
-                fontSize: ft.size ? `${ft.size}px` : (fontSize === 'small' ? '0.9rem' : (fontSize === 'medium' ? '1.1rem' : '1.4rem')),
-                color: '#1a365d',
-                fontWeight: 600,
-                whiteSpace: 'pre-wrap',
-                background: 'rgba(255, 255, 255, 0.7)',
-                padding: '4px 8px',
-                borderRadius: '4px',
-                border: '1px dashed transparent',
-                transition: 'border 0.2s'
-              }}
-              onMouseDown={(e) => handleElementMouseDown(e, page.id || draftPage.id, 'text', ft.id)}
-              onMouseOver={(e) => e.target.style.border = '1px dashed #6366f1'}
-              onMouseOut={(e) => e.target.style.border = '1px dashed transparent'}
-            >
-              {ft.text}
-            </div>
-            {!isExporting && (
-              <div 
-                className="resize-handle"
-                onMouseDown={(e) => handleElementMouseDown(e, page.id || draftPage.id, 'text-resize', ft.id)}
-              />
-            )}
-          </div>
-        ))}
-
-        {/* Footer Area (Page Number Only) */}
-        {page.type !== 'pdfpage' && (
-          <div style={{ position: 'absolute', bottom: '30px', right: '40px', fontSize: '0.9rem', fontWeight: 500, color: '#666', fontFamily: 'inherit' }}>
-            {index + 1}
-          </div>
-        )}
-
-        {/* Global Branding Fixed at Bottom Center */}
-        {brandingName && (
-          <div 
-            className="floating-element-container"
-            style={{
-              position: 'absolute',
-              left: isBrandingFree ? (page.brandingX ?? brandingX) : '50%',
-              top: isBrandingFree ? (page.brandingY ?? brandingY) : 'auto',
-              bottom: isBrandingFree ? 'auto' : '30px',
-              transform: isBrandingFree ? 'none' : 'translateX(-50%)',
-              zIndex: 20
-            }}
-          >
-            <div
-              style={{
-                fontSize: isBrandingFree ? `${page.brandingSize ?? brandingSize}px` : '1rem',
-                fontWeight: 800,
-                color: '#2563eb',
-                fontFamily: 'inherit',
-                textAlign: 'center',
-                padding: '6px 12px',
-                border: '1px solid #e5e7eb',
-                boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
-                pointerEvents: 'auto',
-                background: '#ffffff',
-                borderRadius: '6px',
-                cursor: isBrandingFree ? 'grab' : 'default',
-              }}
-              onMouseDown={(e) => {
-                if (isBrandingFree) {
-                  handleElementMouseDown(e, page.id || draftPage.id, 'branding');
-                }
-              }}
-              onDragStart={(e) => e.preventDefault()}
-            >
-              {brandingLink ? (
-                <a 
-                  className="branding-link"
-                  href={brandingLink.startsWith('http') ? brandingLink : `https://${brandingLink}`} 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
-                  style={{ color: '#2563eb', textDecoration: 'underline', cursor: 'pointer', fontWeight: 800 }}
-                  onDragStart={(e) => e.preventDefault()}
-                  onClick={(e) => { if(isBrandingFree && isDragging) e.preventDefault(); }}
-                >
-                  {brandingName}
-                </a>
-              ) : (
-                <span style={{ fontWeight: 800, color: '#1f2937' }}>{brandingName}</span>
-              )}
-            </div>
-            {!isExporting && isBrandingFree && (
-              <div 
-                className="resize-handle"
-                onMouseDown={(e) => handleElementMouseDown(e, page.id || draftPage.id, 'branding-resize')}
-              />
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
+  const handlersRef = React.useRef({
+    handleEditPage,
+    handleDeletePage,
+    handleDirectEdit,
+    handleElementMouseDown
+  });
+  React.useEffect(() => {
+    handlersRef.current = { handleEditPage, handleDeletePage, handleDirectEdit, handleElementMouseDown };
+  });
+  const stableHandlers = React.useMemo(() => ({
+    handleEditPage: (...args) => handlersRef.current.handleEditPage(...args),
+    handleDeletePage: (...args) => handlersRef.current.handleDeletePage(...args),
+    handleDirectEdit: (...args) => handlersRef.current.handleDirectEdit(...args),
+    handleElementMouseDown: (...args) => handlersRef.current.handleElementMouseDown(...args)
+  }), []);
 
   return (
     <div className={`app-container page-size-${pageSize}`}>
@@ -1560,7 +1594,7 @@ function App() {
                 { id: 'modern', label: 'Modern' },
                 { id: 'minimalist', label: 'Minimalist' },
                 { id: 'theory', label: 'Theory Book' },
-                { id: 'question', label: 'Question Bank' },
+
                 { id: 'polity', label: 'Polity Exam' }
               ].map(tpl => (
                 <div key={tpl.id}>
@@ -1665,20 +1699,6 @@ function App() {
           {/* Draft Form */}
           <div className="form-group" style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <label><Layers /> Current Page Layout</label>
-            <label style={{ fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', color: isGlobalLayout ? 'var(--primary)' : 'var(--text-muted)' }}>
-              <input 
-                type="checkbox" 
-                checked={isGlobalLayout} 
-                onChange={(e) => {
-                  const checked = e.target.checked;
-                  setIsGlobalLayout(checked);
-                  if (checked) {
-                    setPages(prev => prev.map(p => ({ ...p, type: draftPage.type })));
-                  }
-                }}
-              />
-              Lock for all pages
-            </label>
           </div>
           <select 
             className="form-control" 
@@ -1751,43 +1771,13 @@ function App() {
                     </div>
                   </>
                 );
-              case 'imagetext':
-                return (
-                  <>
-                    <div className="form-group">
-                      <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span><Type /> Image URL</span>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          <label style={{ fontSize: '0.75rem', color: 'var(--primary)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                            <Upload size={12} style={{ marginRight: '4px' }} /> Upload
-                            <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageUpload} />
-                          </label>
-                          <a href="https://www.google.com/imghp" target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.75rem', color: 'var(--primary)', textDecoration: 'none' }}>
-                            🔍 Find
-                          </a>
-                        </div>
-                      </label>
-                      <input type="text" className="form-control" value={draftPage.image || ''} onChange={e => handleUpdateDraft('image', e.target.value)} placeholder="Paste image address or click Upload..." />
-                    </div>
-                    <div className="form-group">
-                      <label><Type /> Heading</label>
-                      <input type="text" className="form-control" value={draftPage.title} onChange={e => handleUpdateDraft('title', e.target.value)} placeholder="Image Heading..." />
-                    </div>
-                    <div className="form-group">
-                      <label><AlignLeft /> Page Content</label>
-                      <RichTextarea id="ta-imagetext" value={draftPage.content} onChange={val => handleUpdateDraft('content', val)} placeholder="Text below image..." rows={8} />
-                    </div>
-                  </>
-                );
               case 'exam':
-              case 'question':
+              case 'gridexam':
               case 'mcq':
-              case 'notes':
               case 'content':
               case 'twocolumn':
               case 'preface':
               case 'toc':
-              case 'backcover':
                 return (
                   <>
                     <div className="form-group">
@@ -1916,7 +1906,7 @@ function App() {
         </div>
 
         <div className="sidebar-footer">
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
             <button 
               className="btn-primary" 
               onClick={handleDownloadPDF}
@@ -1934,6 +1924,14 @@ function App() {
               <input type="file" accept="application/pdf" style={{ display: 'none' }} onChange={handleImportPDF} />
             </label>
           </div>
+          <button 
+            className="btn-danger" 
+            onClick={handleDeleteAllPages}
+            disabled={pages.length === 0}
+            style={{ width: '100%', padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: pages.length === 0 ? 0.5 : 1 }}
+          >
+            <Trash2 size={20} style={{ marginRight: '8px' }} /> Delete All Pages
+          </button>
         </div>
       </div>
 
@@ -1974,6 +1972,22 @@ function App() {
               page={editingPageId === page.id ? draftPage : page} 
               index={index} 
               isDraft={false} 
+              editingPageId={editingPageId}
+              draftPageId={draftPage.id}
+              hasPages={pages.length > 0}
+              isExporting={isExporting}
+              zoom={zoom}
+              pageSize={pageSize}
+              template={template}
+              fontSize={fontSize}
+              brandingName={brandingName}
+              brandingLink={brandingLink}
+              brandingX={brandingX}
+              brandingY={brandingY}
+              brandingSize={brandingSize}
+              isBrandingFree={isBrandingFree}
+              isDragging={isDragging}
+              stableHandlers={stableHandlers}
             />
             {!isExporting && (
               <div className="preview-insert-btn" onClick={() => handleInsertPageAfter(index)} style={{ width: `calc(var(--page-width) * ${zoom / 100})` }}>
