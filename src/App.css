@@ -1456,3 +1456,77 @@ textarea.form-control {
 .sidebar:not(.sidebar-collapsed) ~ .preview-area .sidebar-toggle-btn {
   left: calc(450px + 20px);
 }
+
+/* ========================================================= */
+/* Responsive & Mobile-Friendly Adjustments */
+/* ========================================================= */
+
+@media (max-width: 1024px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    z-index: 100;
+    width: 380px !important;
+    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.15);
+    transform: translateX(0);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+  }
+
+  .sidebar.sidebar-collapsed {
+    transform: translateX(-100%);
+    width: 380px !important;
+    opacity: 0;
+  }
+
+  .preview-area {
+    width: 100vw;
+    padding-top: 80px; 
+  }
+
+  /* Keep toggle button just outside the sidebar */
+  .sidebar:not(.sidebar-collapsed) ~ .preview-area .sidebar-toggle-btn {
+    left: calc(380px + 20px);
+  }
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    width: 100vw !important;
+  }
+
+  .sidebar.sidebar-collapsed {
+    width: 100vw !important;
+  }
+
+  .grid-3 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+
+  /* When sidebar is full width on mobile, move toggle button to top-right corner to act as close button */
+  .sidebar:not(.sidebar-collapsed) ~ .preview-area .sidebar-toggle-btn {
+    left: auto !important;
+    right: 20px;
+    z-index: 101;
+  }
+  
+  .sidebar-toggle-btn {
+    z-index: 101;
+  }
+}
+
+@media (max-width: 480px) {
+  .grid-3 {
+    grid-template-columns: 1fr;
+  }
+  
+  .preview-area {
+    padding: 10px;
+    padding-top: 80px;
+  }
+}

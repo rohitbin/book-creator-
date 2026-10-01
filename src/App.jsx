@@ -841,11 +841,11 @@ function App() {
   };
 
   const [template, setTemplate] = useState(() => getSavedState('bookforge_template', 'polity'));
-  const [isSidebarOpen, setIsSidebarOpen] = useState(() => getSavedState('bookforge_sidebarOpen', true));
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => getSavedState('bookforge_sidebarOpen', window.innerWidth > 1024));
   const [isExporting, setIsExporting] = useState(false);
   const [fontSize, setFontSize] = useState(() => getSavedState('bookforge_fontSize', 'medium'));
   const [pageSize, setPageSize] = useState(() => getSavedState('bookforge_pageSize', 'a4'));
-  const [zoom, setZoom] = useState(() => getSavedState('bookforge_zoom', 70));
+  const [zoom, setZoom] = useState(() => getSavedState('bookforge_zoom', window.innerWidth <= 480 ? 35 : (window.innerWidth <= 768 ? 50 : 70)));
   const [editingPageId, setEditingPageId] = useState(() => getSavedState('bookforge_editingPageId', null));
   const [isGlobalLayout, setIsGlobalLayout] = useState(() => getSavedState('bookforge_isGlobalLayout', false));
   const [brandingName, setBrandingName] = useState(() => getSavedState('bookforge_brandingName', ''));
