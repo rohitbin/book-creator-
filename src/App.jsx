@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
-import { Download, Type, User, AlignLeft, LayoutTemplate, Sparkles, BookOpen, Layers, FileText, Plus, Trash2, ZoomIn, ZoomOut, Maximize, Image, Upload } from 'lucide-react';
+import { Download, Type, User, AlignLeft, LayoutTemplate, Sparkles, BookOpen, Layers, FileText, Plus, Trash2, ZoomIn, ZoomOut, Maximize, Image, Upload, Menu } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 import { PDFDocument, rgb, PDFName, PDFString, StandardFonts } from 'pdf-lib';
@@ -841,6 +841,7 @@ function App() {
   };
 
   const [template, setTemplate] = useState(() => getSavedState('bookforge_template', 'polity'));
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => getSavedState('bookforge_sidebarOpen', true));
   const [isExporting, setIsExporting] = useState(false);
   const [fontSize, setFontSize] = useState(() => getSavedState('bookforge_fontSize', 'medium'));
   const [pageSize, setPageSize] = useState(() => getSavedState('bookforge_pageSize', 'a4'));
@@ -884,13 +885,14 @@ function App() {
       window.localStorage.setItem('bookforge_pages', JSON.stringify(pages));
       window.localStorage.setItem('bookforge_draftPage', JSON.stringify(draftPage));
       window.localStorage.setItem('bookforge_editingPageId', JSON.stringify(editingPageId));
+      window.localStorage.setItem('bookforge_sidebarOpen', JSON.stringify(isSidebarOpen));
     } catch (error) {
       console.error("Failed to save state to localStorage", error);
     }
   }, [
     template, fontSize, pageSize, zoom, isGlobalLayout,
     brandingName, brandingLink, brandingX, brandingY, brandingSize, isBrandingFree,
-    pages, draftPage, editingPageId
+    pages, draftPage, editingPageId, isSidebarOpen
   ]);
 
   const PAGE_TYPES = [
@@ -1580,7 +1582,7 @@ function App() {
   return (
     <div className={`app-container page-size-${pageSize}`}>
       {/* Sidebar Controls */}
-      <div className="sidebar">
+      <div className={`sidebar ${isSidebarOpen ? '' : 'sidebar-collapsed'}`}>
         <div className="sidebar-header">
           <BookOpen className="icon-gradient" size={28} />
           <h1>BookForge PDF</h1>
@@ -1947,7 +1949,14 @@ function App() {
         onMouseLeave={handleMouseLeave}
       >
         
-        {/* Zoom Controls */}
+        <button 
+          className="sidebar-toggle-btn"
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          title={isSidebarOpen ? "Collapse Sidebar" : "Expand Sidebar"}
+        >
+          <Menu size={24} />
+        </button>
+        /* Zoom Controls */
         {!isExporting && (
           <div className="zoom-controls">
             <button onClick={handleZoomOut} title="Zoom Out"><ZoomOut size={18} /></button>

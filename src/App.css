@@ -1409,3 +1409,50 @@ textarea.form-control {
   font-size: 0.9em;
   font-weight: 600;
 }
+
+.sidebar {
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-collapsed {
+  width: 0 !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  border-right: none !important;
+  opacity: 0;
+  overflow: hidden;
+}
+
+.sidebar-toggle-btn {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  z-index: 50;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  color: var(--text-main);
+  transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1), background 0.2s, box-shadow 0.2s;
+}
+
+.sidebar-toggle-btn:hover {
+  background: var(--bg-hover);
+  box-shadow: var(--shadow-md);
+  color: var(--primary);
+}
+
+.preview-area {
+  position: relative;
+}
+
+/* When sidebar is open, push the toggle button right */
+.sidebar:not(.sidebar-collapsed) ~ .preview-area .sidebar-toggle-btn {
+  left: calc(450px + 20px);
+}
