@@ -200,8 +200,7 @@ const RichTextarea = ({ id, value, onChange, placeholder, rows }) => {
       }
       
       // Generic Table / Pairs Detection (e.g. Literary work      Author)
-      // Matches 2+ spaces, OR 1+ tabs, OR a large gap.
-      let genericSideBySideMatch = trimmedLine.match(/^(.+?)(?:\s{2,}|\t+)(.+)$/);
+      let genericSideBySideMatch = trimmedLine.match(/^(.+?)\s{2,}(.+)$/);
       
       // Implicit Matching Question Detection (if missing headers)
       if (isMatchingQuestion && !inList1 && !inList2 && /^[A-D]\.\s*[^A-Z-]/i.test(trimmedLine)) {
@@ -264,17 +263,6 @@ const RichTextarea = ({ id, value, onChange, placeholder, rows }) => {
            } else if ((list1Header || list2Header) && genericSideBySideMatch) {
               list1Items.push(genericSideBySideMatch[1].trim());
               list2Items.push(genericSideBySideMatch[2].trim());
-           } else if ((list1Header || list2Header)) {
-              // If we are in a generic side-by-side table but it failed the 2+ space regex,
-              // it might be separated by a single space or tab. Let's try to intelligently split it!
-              // Usually items start with "1.", "2.", so if we find "1. Item Name  Other Name", we can try.
-              let fallbackMatch = trimmedLine.match(/^(\d+[\.\)]\s+[^ ]+.*?)\s+([^ ]+.*)$/);
-              if (fallbackMatch && !trimmedLine.match(/^(how many|which of)/i)) {
-                 list1Items.push(fallbackMatch[1].trim());
-                 list2Items.push(fallbackMatch[2].trim());
-              } else {
-                 list1Items.push(trimmedLine);
-              }
            } else {
               list1Items.push(trimmedLine);
            }
