@@ -1530,3 +1530,57 @@ textarea.form-control {
     padding-top: 80px;
   }
 }
+
+/* Insert Page Dropdown */
+.preview-insert-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  gap: 4px;
+  z-index: 100;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s;
+  min-width: 200px;
+  border: 1px solid var(--border);
+}
+
+.preview-insert-btn-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.preview-insert-btn-container:hover .preview-insert-dropdown {
+  opacity: 1;
+  visibility: visible;
+  top: calc(100% + 5px);
+}
+
+.preview-insert-option {
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-main);
+  transition: background 0.2s;
+  border: none;
+  background: transparent;
+  text-align: left;
+}
+
+.preview-insert-option:hover {
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--primary);
+}
+ 
+ 

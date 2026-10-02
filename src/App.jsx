@@ -1115,8 +1115,9 @@ function App() {
     setDraftPage(prev => ({ type: isGlobalLayout ? prev.type : 'content', title: '', content: '' }));
   };
 
-  const handleInsertPageAfter = (index) => {
-    const newPage = { id: Date.now(), type: draftPage.type, title: '', content: '' };
+  const handleInsertPageAfter = (index, specificType = null) => {
+    const pageType = specificType || draftPage.type;
+    const newPage = { id: Date.now(), type: pageType, title: '', content: '' };
     setPages(prev => {
       const updated = [...prev];
       updated.splice(index + 1, 0, newPage);
@@ -1997,9 +1998,15 @@ function App() {
         {!isExporting && pages.length > 0 && (
           <div className="preview-insert-btn" onClick={() => handleInsertPageAfter(-1)} style={{ width: `calc(var(--page-width) * ${zoom / 100})` }}>
             <div className="preview-insert-line"></div>
-            <button className="btn-primary" style={{ borderRadius: '50%', padding: '0', margin: '0 20px', width: '44px', height: '44px', minWidth: '44px', minHeight: '44px' }} title="Insert Page at Beginning">
-              <Plus size={24} />
-            </button>
+            <div className="preview-insert-btn-container" onClick={(e) => e.stopPropagation()}>
+              <button className="btn-primary" style={{ borderRadius: '50%', padding: '0', margin: '0 20px', width: '44px', height: '44px', minWidth: '44px', minHeight: '44px' }} title="Insert Page at Beginning" onClick={() => handleInsertPageAfter(-1)}>
+                <Plus size={24} />
+              </button>
+              <div className="preview-insert-dropdown">
+                <button className="preview-insert-option" onClick={(e) => { e.stopPropagation(); handleInsertPageAfter(-1, 'chapter'); }}>Chapter Opening</button>
+                <button className="preview-insert-option" onClick={(e) => { e.stopPropagation(); handleInsertPageAfter(-1, 'exam'); }}>2-column Exam / MCQ</button>
+              </div>
+            </div>
             <div className="preview-insert-line"></div>
           </div>
         )}
@@ -2033,9 +2040,15 @@ function App() {
             {!isExporting && (
               <div className="preview-insert-btn" onClick={() => handleInsertPageAfter(index)} style={{ width: `calc(var(--page-width) * ${zoom / 100})` }}>
                 <div className="preview-insert-line"></div>
-                <button className="btn-primary" style={{ borderRadius: '50%', padding: '0', margin: '0 20px', width: '44px', height: '44px', minWidth: '44px', minHeight: '44px' }} title="Insert Page Here">
-                  <Plus size={24} />
-                </button>
+                <div className="preview-insert-btn-container" onClick={(e) => e.stopPropagation()}>
+                  <button className="btn-primary" style={{ borderRadius: '50%', padding: '0', margin: '0 20px', width: '44px', height: '44px', minWidth: '44px', minHeight: '44px' }} title="Insert Page Here" onClick={() => handleInsertPageAfter(index)}>
+                    <Plus size={24} />
+                  </button>
+                  <div className="preview-insert-dropdown">
+                    <button className="preview-insert-option" onClick={(e) => { e.stopPropagation(); handleInsertPageAfter(index, 'chapter'); }}>Chapter Opening</button>
+                    <button className="preview-insert-option" onClick={(e) => { e.stopPropagation(); handleInsertPageAfter(index, 'exam'); }}>2-column Exam / MCQ</button>
+                  </div>
+                </div>
                 <div className="preview-insert-line"></div>
               </div>
             )}
