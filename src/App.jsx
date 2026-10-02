@@ -338,12 +338,12 @@ const RichTextarea = ({ id, value, onChange, placeholder, rows }) => {
     return elements;
   };
 
-  // Helper component to render a page
   const RenderPage = React.memo(({ 
   page, index, isDraft = false, 
-  editingPageId, draftPageId, hasPages,
+  editingPageId, draftPageId, hasPages, pages = [],
   isExporting, zoom, pageSize, template, fontSize,
   brandingName, brandingLink, brandingX, brandingY, brandingSize, isBrandingFree, isDragging,
+  showPageNumbers = true, startPageNumber = 1,
   stableHandlers
 }) => {
   const { handleEditPage, handleDeletePage, handleDirectEdit, handleElementMouseDown } = stableHandlers;
@@ -544,7 +544,7 @@ const RichTextarea = ({ id, value, onChange, placeholder, rows }) => {
                       <div key={p.id} className="toc-item">
                         <span className="toc-chapter-title">{p.subtitle ? `${p.subtitle}: ` : ''}{p.title || 'Untitled Chapter'}</span>
                         <span className="toc-dots"></span>
-                        <span className="toc-page-num">{i + 1}</span>
+                        <span className="toc-page-num">{startPageNumber + i}</span>
                       </div>
                     );
                   }
@@ -750,9 +750,9 @@ const RichTextarea = ({ id, value, onChange, placeholder, rows }) => {
         ))}
 
         {/* Footer Area (Page Number Only) */}
-        {page.type !== 'pdfpage' && (
+        {showPageNumbers && page.type !== 'pdfpage' && (
           <div style={{ position: 'absolute', bottom: '30px', right: '40px', fontSize: '0.9rem', fontWeight: 500, color: '#666', fontFamily: 'inherit' }}>
-            {index + 1}
+            {startPageNumber + index}
           </div>
         )}
 
@@ -854,6 +854,8 @@ function App() {
   const [brandingY, setBrandingY] = useState(() => getSavedState('bookforge_brandingY', 1050));
   const [brandingSize, setBrandingSize] = useState(() => getSavedState('bookforge_brandingSize', 16));
   const [isBrandingFree, setIsBrandingFree] = useState(() => getSavedState('bookforge_isBrandingFree', false));
+  const [showPageNumbers, setShowPageNumbers] = useState(() => getSavedState('bookforge_showPageNumbers', true));
+  const [startPageNumber, setStartPageNumber] = useState(() => getSavedState('bookforge_startPageNumber', 1));
   const [pages, setPages] = useState(() => getSavedState('bookforge_pages', [{ ...initialDraftPage, id: Date.now() }]));
   const [draftPage, setDraftPage] = useState(() => getSavedState('bookforge_draftPage', initialDraftPage));
   const [originalPdfBytes, setOriginalPdfBytes] = useState(null);
@@ -882,6 +884,8 @@ function App() {
       window.localStorage.setItem('bookforge_brandingY', JSON.stringify(brandingY));
       window.localStorage.setItem('bookforge_brandingSize', JSON.stringify(brandingSize));
       window.localStorage.setItem('bookforge_isBrandingFree', JSON.stringify(isBrandingFree));
+      window.localStorage.setItem('bookforge_showPageNumbers', JSON.stringify(showPageNumbers));
+      window.localStorage.setItem('bookforge_startPageNumber', JSON.stringify(startPageNumber));
       window.localStorage.setItem('bookforge_pages', JSON.stringify(pages));
       window.localStorage.setItem('bookforge_draftPage', JSON.stringify(draftPage));
       window.localStorage.setItem('bookforge_editingPageId', JSON.stringify(editingPageId));
@@ -892,6 +896,7 @@ function App() {
   }, [
     template, fontSize, pageSize, zoom, isGlobalLayout,
     brandingName, brandingLink, brandingX, brandingY, brandingSize, isBrandingFree,
+    showPageNumbers, startPageNumber,
     pages, draftPage, editingPageId, isSidebarOpen
   ]);
 
@@ -1700,6 +1705,28 @@ function App() {
 
           <hr style={{ borderTop: '1px solid var(--border)', borderBottom: 'none' }} />
 
+          {/* Page Number Settings */}
+          <div className="form-group">
+            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '8px' }}>
+              <input type="checkbox" checked={showPageNumbers} onChange={e => setShowPageNumbers(e.target.checked)} />
+              Show Page Numbers
+            </label>
+          </div>
+          {showPageNumbers && (
+            <div className="form-group">
+              <label><FileText size={16} style={{ marginRight: '4px', verticalAlign: 'text-bottom' }} /> Starting Page Number</label>
+              <input 
+                type="number" 
+                className="form-control" 
+                value={startPageNumber} 
+                onChange={e => setStartPageNumber(e.target.value === '' ? '' : parseInt(e.target.value))} 
+                min="1" 
+              />
+            </div>
+          )}
+
+          <hr style={{ borderTop: '1px solid var(--border)', borderBottom: 'none' }} />
+
           {/* Draft Form */}
           <div className="form-group" style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <label><Layers /> Current Page Layout</label>
@@ -1998,6 +2025,9 @@ function App() {
               brandingSize={brandingSize}
               isBrandingFree={isBrandingFree}
               isDragging={isDragging}
+              showPageNumbers={showPageNumbers}
+              startPageNumber={startPageNumber === '' ? 1 : startPageNumber}
+              pages={pages}
               stableHandlers={stableHandlers}
             />
             {!isExporting && (
