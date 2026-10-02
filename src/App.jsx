@@ -199,6 +199,10 @@ const RichTextarea = ({ id, value, onChange, placeholder, rows }) => {
         continue;
       }
       
+      // Generic Table / Pairs Detection (e.g. Literary work      Author)
+      // Matches 2+ spaces, OR 1+ tabs, OR a large gap.
+      let genericSideBySideMatch = trimmedLine.match(/^(.+?)(?:\s{2,}|\t+)(.+)$/);
+      
       // Implicit Matching Question Detection (if missing headers)
       if (isMatchingQuestion && !inList1 && !inList2 && /^[A-D]\.\s*[^A-Z-]/i.test(trimmedLine)) {
          // It starts with A. but is not an option like A. A-3
@@ -207,11 +211,36 @@ const RichTextarea = ({ id, value, onChange, placeholder, rows }) => {
             list1Header = 'List I';
             list2Header = 'List II';
          }
+      } else if (!inList1 && !inList2 && genericSideBySideMatch) {
+         // Exclude options, commands, and standard questions
+         let isOptionsRow = /^[A-D]\./i.test(genericSideBySideMatch[1].trim()) && /^[A-D]\./i.test(genericSideBySideMatch[2].trim());
+         let isCommand = /^(how many of|which of the|select the|codes?:|options?:|answer:|exam:|year:)/i.test(trimmedLine);
+         
+         if (!isOptionsRow && !isCommand) {
+             let isHeader = !/^(\d+[\.\)]|[A-D]\.)/.test(trimmedLine);
+             let isPairsContext = false;
+             if (i > 0) isPairsContext = isPairsContext || /(consider the following pairs|match the following)/i.test(lines[i-1]);
+             if (i > 1) isPairsContext = isPairsContext || /(consider the following pairs|match the following)/i.test(lines[i-2]);
+             
+             if (isHeader || isPairsContext) {
+                 inList1 = true;
+                 if (isHeader) {
+                     list1Header = genericSideBySideMatch[1].trim();
+                     list2Header = genericSideBySideMatch[2].trim();
+                 } else {
+                     list1Header = '';
+                     list2Header = '';
+                     list1Items.push(genericSideBySideMatch[1].trim());
+                     list2Items.push(genericSideBySideMatch[2].trim());
+                 }
+                 continue;
+             }
+         }
       }
       
       if (inList1) {
         // Exit list 1 if we hit options or commands
-        if (/^[A-D]\.\s*[A-Z]-/.test(trimmedLine) || /^(Codes?:|Options?:|Select\s+|Exam:|Year:)/i.test(trimmedLine) || /^[A-D]\s+A-/.test(trimmedLine)) {
+        if (/^[A-D]\.\s*[A-Z]-/.test(trimmedLine) || /^(Codes?:|Options?:|Select\s+|Exam:|Year:|How many of|Which of the)/i.test(trimmedLine) || /^[A-D]\s+A-/.test(trimmedLine) || /^[A-D]\.\s*(Only|All|None)/i.test(trimmedLine)) {
            flushLists();
            // Process normally below
         } else if (isMatchingQuestion && !/^List\s*[-–—]?\s*I/i.test(list1Header)) {
@@ -226,11 +255,26 @@ const RichTextarea = ({ id, value, onChange, placeholder, rows }) => {
                continue;
            }
         } else {
-           // Check for side-by-side formatting like "A. Treaty   1. 1782"
-           let sideBySideMatch = trimmedLine.match(/^([A-D]\..+?)\s+(\d+[\.\)].+)$/);
-           if (sideBySideMatch) {
-              list1Items.push(sideBySideMatch[1].trim());
-              list2Items.push(sideBySideMatch[2].trim());
+           // Check for side-by-side formatting
+           let strictSideBySideMatch = trimmedLine.match(/^([A-D]\..+?)\s+(\d+[\.\)].+)$/);
+           
+           if (strictSideBySideMatch) {
+              list1Items.push(strictSideBySideMatch[1].trim());
+              list2Items.push(strictSideBySideMatch[2].trim());
+           } else if ((list1Header || list2Header) && genericSideBySideMatch) {
+              list1Items.push(genericSideBySideMatch[1].trim());
+              list2Items.push(genericSideBySideMatch[2].trim());
+           } else if ((list1Header || list2Header)) {
+              // If we are in a generic side-by-side table but it failed the 2+ space regex,
+              // it might be separated by a single space or tab. Let's try to intelligently split it!
+              // Usually items start with "1.", "2.", so if we find "1. Item Name  Other Name", we can try.
+              let fallbackMatch = trimmedLine.match(/^(\d+[\.\)]\s+[^ ]+.*?)\s+([^ ]+.*)$/);
+              if (fallbackMatch && !trimmedLine.match(/^(how many|which of)/i)) {
+                 list1Items.push(fallbackMatch[1].trim());
+                 list2Items.push(fallbackMatch[2].trim());
+              } else {
+                 list1Items.push(trimmedLine);
+              }
            } else {
               list1Items.push(trimmedLine);
            }
