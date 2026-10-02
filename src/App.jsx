@@ -370,6 +370,39 @@ const RichTextarea = ({ id, value, onChange, placeholder, rows }) => {
     return elements;
   };
 
+  const splitExamBlocks = (text) => {
+    if (!text) return [];
+    const lines = text.split('\n');
+    const blocks = [];
+    let currentBlock = [];
+    let inStatements = false;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmedLine = line.trim();
+      
+      const qMatch = line.match(/^(\s*\d+[\.\)])/);
+      if (qMatch && !inStatements && currentBlock.length > 0) {
+        blocks.push(currentBlock.join('\n'));
+        currentBlock = [];
+      }
+
+      if (/(statements?:|consider the following:?|following pairs:?)/i.test(trimmedLine)) {
+        inStatements = true;
+      } else if (inStatements && (/^[A-D]\./i.test(trimmedLine) || /^(which of the|how many of|select the correct|codes?:)/i.test(trimmedLine))) {
+        inStatements = false;
+      }
+      
+      currentBlock.push(line);
+    }
+    
+    if (currentBlock.length > 0) {
+      blocks.push(currentBlock.join('\n'));
+    }
+    
+    return blocks;
+  };
+
   const RenderPage = React.memo(({ 
   page, index, isDraft = false, 
   editingPageId, draftPageId, hasPages, pages = [],
@@ -616,7 +649,7 @@ const RichTextarea = ({ id, value, onChange, placeholder, rows }) => {
           <div className="page-inner-exam">
             {page.title && <div className="content-title" contentEditable={!isExporting} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'title', e.target.innerText)}>{page.title}</div>}
             <div className="content-body exam-body" style={getFontSizeStyle(fontSize)} contentEditable={!isExporting} suppressContentEditableWarning={true} onBlur={e => handleDirectEdit(page.id, 'content', e.target.innerText)}>
-              {(page.content || '').split(/(?=\n\s*\d+[\.\)])/).map((block, i) => {
+              {splitExamBlocks(page.content || '').map((block, i) => {
                 if (!block.trim()) return null;
                 
                 // Split the block to find the "Answer:" section
@@ -982,7 +1015,7 @@ function App() {
         let qCount = 1;
         while ((match = regex.exec(textToProcess)) !== null) {
           qCount++;
-          const MAX_Q = ['exam', 'gridexam'].includes(type) ? 6 : 4;
+          const MAX_Q = ['exam', 'gridexam'].includes(type) ? 5 : 4;
           
           if (qCount > MAX_Q) {
             breakPoint = match.index;
@@ -993,10 +1026,12 @@ function App() {
           const rawLines = subText.split('\n').length;
           const subLines = rawLines + (qCount * 8);
           
-          if (match.index > 0 && match.index <= maxChars && subLines <= maxLines) {
+          if (match.index > maxChars || subLines > maxLines) {
+            break;
+          }
+          if (match.index > 0) {
             breakPoint = match.index;
           }
-          if (match.index > maxChars || subLines > maxLines) break;
         }
       } else if (type === 'toc') {
         let currentPos = 0;
@@ -1061,13 +1096,12 @@ function App() {
       
       if (['exam', 'gridexam'].includes(draftPage.type)) {
         MAX_CHARS *= 0.28;
-        MAX_LINES *= 2; // Two columns can hold twice the lines
+        MAX_LINES *= 2; 
       } else if (draftPage.type === 'twocolumn') {
         MAX_CHARS *= 0.55;
         MAX_LINES *= 2;
       } else if (['mcq'].includes(draftPage.type)) {
         MAX_CHARS *= 0.45;
-        // Lines remain the same for single column, but chars are heavily restricted
       }
       
       const paginatableTypes = ['content', 'twocolumn', 'exam', 'gridexam', 'mcq', 'preface', 'toc'];
@@ -1075,7 +1109,7 @@ function App() {
       if (paginatableTypes.includes(draftPage.type) && draftPage.content) {
          const rawCurrentLines = draftPage.content.split('\n').length;
          const currentQuestionCount = (draftPage.content.match(/\n\s*\d+[\.\)]/g) || []).length + 1;
-         const MAX_Q = ['exam', 'gridexam'].includes(draftPage.type) ? 6 : (['mcq'].includes(draftPage.type) ? 4 : 999);
+         const MAX_Q = ['exam', 'gridexam'].includes(draftPage.type) ? 5 : (['mcq'].includes(draftPage.type) ? 4 : 999);
          const currentLines = rawCurrentLines + (currentQuestionCount * 8);
          const isTocOverflow = draftPage.type === 'toc' && rawCurrentLines > Math.max(10, Math.floor(MAX_LINES * 0.7));
          
@@ -1126,7 +1160,7 @@ function App() {
 
     const rawCurrentLines = draftPage.content ? draftPage.content.split('\n').length : 0;
     const currentQuestionCount = draftPage.content ? (draftPage.content.match(/\n\s*\d+[\.\)]/g) || []).length + 1 : 0;
-    const MAX_Q = ['exam', 'gridexam'].includes(draftPage.type) ? 6 : (['mcq'].includes(draftPage.type) ? 4 : 999);
+    const MAX_Q = ['exam', 'gridexam'].includes(draftPage.type) ? 5 : (['mcq'].includes(draftPage.type) ? 4 : 999);
     const currentLines = rawCurrentLines + (currentQuestionCount * 8);
     const isTocOverflow = draftPage.type === 'toc' && rawCurrentLines > Math.max(10, Math.floor(MAX_LINES * 0.7));
     
